@@ -146,6 +146,180 @@ export const addStaffFn = createServerFn({ method: "POST" })
     return { ok: true as const };
   });
 
+// ---------- CREDENTIALS (admin & manager manage staff logins) ----------
+async function assertManagerOrAdmin(actorId: string) {
+  const { data: u } = await supabaseAdmin
+    .from("app_users")
+    .select("role")
+    .eq("id", actorId)
+    .maybeSingle();
+  if (!u || (u.role !== "admin" && u.role !== "manager")) return null;
+  return u;
+}
+
+function genPassword(len = 10) {
+  const chars = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  const bytes = crypto.randomBytes(len);
+  for (let i = 0; i < len; i++) out += chars[bytes[i] % chars.length];
+  return out;
+}
+
+export const listCredentialsFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ actorId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const u = await assertManagerOrAdmin(data.actorId);
+    if (!u) return { ok: false as const, error: "Unauthorized", users: [] };
+    const { data: rows, error } = await supabaseAdmin
+      .from("app_users")
+      .select("id, username, role, branch, staff_name, created_at")
+      .order("role")
+      .order("username");
+    if (error) return { ok: false as const, error: error.message, users: [] };
+    return { ok: true as const, users: rows ?? [] };
+  });
+
+const credInput = z.object({
+  username: z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9._-]+$/, "Use letters, numbers, . _ -"),
+  password: z.string().min(6).max(64),
+  staff_name: z.string().trim().min(1).max(50),
+  branch: z.enum(["Vile Parle", "Bandra"]),
+});
+
+export const createCredentialFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ actorId: z.string().uuid(), credential: credInput }))
+  .handler(async ({ data }) => {
+    const u = await assertManagerOrAdmin(data.actorId);
+    if (!u) return { ok: false as const, error: "Unauthorized" };
+
+    const { credential: c } = data;
+    const { data: existing } = await supabaseAdmin
+      .from("app_users")
+      .select("id")
+      .eq("username", c.username)
+      .maybeSingle();
+    if (existing) return { ok: false as const, error: `Username "${c.username}" already exists` };
+
+    const { error } = await supabaseAdmin.from("app_users").insert({
+      username: c.username,
+      password_hash: sha256(c.password),
+      role: "staff",
+      branch: c.branch,
+      staff_name: c.staff_name,
+    });
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const, credential: { username: c.username, password: c.password } };
+  });
+
+export const bulkCreateCredentialsFn = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      actorId: z.string().uuid(),
+      branch: z.enum(["Vile Parle", "Bandra"]).optional(),
+      defaultPassword: z.string().min(6).max(64).optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const u = await assertManagerOrAdmin(data.actorId);
+    if (!u) return { ok: false as const, error: "Unauthorized", created: [], skipped: [] };
+
+    let q = supabaseAdmin.from("staff").select("id, name, branch");
+    if (data.branch) q = q.eq("branch", data.branch);
+    const { data: staffRows, error: sErr } = await q;
+    if (sErr) return { ok: false as const, error: sErr.message, created: [], skipped: [] };
+
+    const { data: existing } = await supabaseAdmin
+      .from("app_users")
+      .select("staff_name")
+      .eq("role", "staff");
+    const taken = new Set((existing ?? []).map((r) => (r.staff_name ?? "").toLowerCase()));
+
+    const created: { staff_name: string; branch: string; username: string; password: string }[] = [];
+    const skipped: { staff_name: string; reason: string }[] = [];
+
+    for (const s of staffRows ?? []) {
+      if (taken.has(s.name.toLowerCase())) {
+        skipped.push({ staff_name: s.name, reason: "Already has login" });
+        continue;
+      }
+      const baseUsername = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      let username = baseUsername;
+      let suffix = 0;
+      // ensure unique
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data: ex } = await supabaseAdmin
+          .from("app_users")
+          .select("id")
+          .eq("username", username)
+          .maybeSingle();
+        if (!ex) break;
+        suffix += 1;
+        username = `${baseUsername}${suffix}`;
+      }
+      const password = data.defaultPassword || genPassword(10);
+      const { error: iErr } = await supabaseAdmin.from("app_users").insert({
+        username,
+        password_hash: sha256(password),
+        role: "staff",
+        branch: s.branch,
+        staff_name: s.name,
+      });
+      if (iErr) {
+        skipped.push({ staff_name: s.name, reason: iErr.message });
+        continue;
+      }
+      created.push({ staff_name: s.name, branch: s.branch, username, password });
+    }
+
+    return { ok: true as const, created, skipped };
+  });
+
+export const resetCredentialPasswordFn = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      actorId: z.string().uuid(),
+      userId: z.string().uuid(),
+      newPassword: z.string().min(6).max(64).optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const u = await assertManagerOrAdmin(data.actorId);
+    if (!u) return { ok: false as const, error: "Unauthorized" };
+    const { data: target } = await supabaseAdmin
+      .from("app_users")
+      .select("id, role, username")
+      .eq("id", data.userId)
+      .maybeSingle();
+    if (!target) return { ok: false as const, error: "User not found" };
+    if (target.role !== "staff") return { ok: false as const, error: "Can only reset staff passwords" };
+
+    const password = data.newPassword || genPassword(10);
+    const { error } = await supabaseAdmin
+      .from("app_users")
+      .update({ password_hash: sha256(password) })
+      .eq("id", data.userId);
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const, username: target.username, password };
+  });
+
+export const deleteCredentialFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ actorId: z.string().uuid(), userId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const u = await assertManagerOrAdmin(data.actorId);
+    if (!u) return { ok: false as const, error: "Unauthorized" };
+    const { data: target } = await supabaseAdmin
+      .from("app_users")
+      .select("role")
+      .eq("id", data.userId)
+      .maybeSingle();
+    if (!target) return { ok: false as const, error: "User not found" };
+    if (target.role !== "staff") return { ok: false as const, error: "Can only delete staff logins" };
+    const { error } = await supabaseAdmin.from("app_users").delete().eq("id", data.userId);
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const };
+  });
+
 export const removeStaffFn = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
