@@ -29,11 +29,11 @@ import { supabase } from "@/integrations/supabase/client";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Book Appointment — Belle Nails" },
+      { title: "Book Appointment — Rashi Nail Art Studio" },
       {
         name: "description",
         content:
-          "Reserve your spot at Belle Nails. Choose branch, date, time, service and stylist — confirm in seconds.",
+          "Reserve your spot at Rashi Nail Art Studio. Choose branch, date, time, service and stylist — confirm in seconds.",
       },
     ],
   }),
@@ -143,7 +143,7 @@ function HomePage() {
             <div className="h-9 w-9 rounded-full bg-gradient-hero grid place-items-center shadow-soft">
               <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-display text-xl font-semibold">Belle Nails</span>
+            <span className="font-display text-xl font-semibold">Rashi Nail Art Studio</span>
           </Link>
           <Button variant="ghost" onClick={() => navigate({ to: "/login" })}>
             <LogIn className="mr-2 h-4 w-4" />

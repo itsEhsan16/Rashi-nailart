@@ -11,7 +11,7 @@ import { getSession, type Session } from "@/lib/auth";
 import { listAppointmentsFn } from "@/lib/salon.functions";
 
 export const Route = createFileRoute("/staff")({
-  head: () => ({ meta: [{ title: "Staff — Belle Nails" }] }),
+  head: () => ({ meta: [{ title: "Staff — Rashi Nail Art Studio" }] }),
   component: StaffPage,
 });
 

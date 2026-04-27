@@ -22,7 +22,7 @@ export function DashboardShell({
               <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <div className="font-display text-lg font-semibold leading-tight">Belle Nails</div>
+              <div className="font-display text-lg font-semibold leading-tight">Rashi Nail Art Studio</div>
               <div className="text-xs text-muted-foreground capitalize">{session.role} panel</div>
             </div>
           </Link>

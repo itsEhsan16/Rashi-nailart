@@ -27,17 +27,17 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Belle Nails — Salon Appointment Booking" },
+      { title: "Rashi Nail Art Studio — Salon Appointment Booking" },
       {
         name: "description",
         content:
-          "Book your salon appointment at Belle Nails — Vile Parle & Bandra. Premium nail extensions, gel polish & more.",
+          "Book your salon appointment at Rashi Nail Art Studio — Vile Parle & Bandra. Premium nail extensions, gel polish & more.",
       },
       {
         name: "author",
-        content: "Belle Nails",
+        content: "Rashi Nail Art Studio",
       },
-      { property: "og:title", content: "Belle Nails — Salon Appointment Booking" },
+      { property: "og:title", content: "Rashi Nail Art Studio — Salon Appointment Booking" },
       {
         property: "og:description",
         content: "Book your salon appointment online — premium nail care.",

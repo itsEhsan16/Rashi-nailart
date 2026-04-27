@@ -5,7 +5,7 @@ import { getSession, type Session } from "@/lib/auth";
 import { AppointmentsView } from "./admin";
 
 export const Route = createFileRoute("/manager")({
-  head: () => ({ meta: [{ title: "Manager — Belle Nails" }] }),
+  head: () => ({ meta: [{ title: "Manager — Rashi Nail Art Studio" }] }),
   component: ManagerPage,
 });
 
