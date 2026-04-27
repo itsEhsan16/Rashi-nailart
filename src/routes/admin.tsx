@@ -29,7 +29,7 @@ import {
 } from "@/lib/salon.functions";
 
 export const Route = createFileRoute("/admin")({
-  head: () => ({ meta: [{ title: "Admin — Belle Nails" }] }),
+  head: () => ({ meta: [{ title: "Admin — Rashi Nail Art Studio" }] }),
   component: AdminPage,
 });
 
