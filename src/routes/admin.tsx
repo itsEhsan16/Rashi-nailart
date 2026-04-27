@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 
 import { DashboardShell } from "@/components/DashboardShell";
+import { CredentialsManager } from "@/components/CredentialsManager";
 import { getSession, type Session } from "@/lib/auth";
 import { BRANCHES, type Branch } from "@/lib/salon-data";
 import {
@@ -69,12 +70,16 @@ function AdminPage() {
         <TabsList>
           <TabsTrigger value="appointments">Appointments</TabsTrigger>
           <TabsTrigger value="staff">Manage Staff</TabsTrigger>
+          <TabsTrigger value="credentials">Login Credentials</TabsTrigger>
         </TabsList>
         <TabsContent value="appointments" className="mt-6">
           <AppointmentsView session={session} canFilter />
         </TabsContent>
         <TabsContent value="staff" className="mt-6">
           <StaffManager session={session} />
+        </TabsContent>
+        <TabsContent value="credentials" className="mt-6">
+          <CredentialsManager session={session} />
         </TabsContent>
       </Tabs>
     </DashboardShell>
