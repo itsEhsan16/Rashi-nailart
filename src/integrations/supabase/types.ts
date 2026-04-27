@@ -14,7 +14,99 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      app_users: {
+        Row: {
+          branch: Database["public"]["Enums"]["branch"] | null
+          created_at: string
+          id: string
+          password_hash: string
+          role: Database["public"]["Enums"]["user_role"]
+          staff_name: string | null
+          username: string
+        }
+        Insert: {
+          branch?: Database["public"]["Enums"]["branch"] | null
+          created_at?: string
+          id?: string
+          password_hash: string
+          role: Database["public"]["Enums"]["user_role"]
+          staff_name?: string | null
+          username: string
+        }
+        Update: {
+          branch?: Database["public"]["Enums"]["branch"] | null
+          created_at?: string
+          id?: string
+          password_hash?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          staff_name?: string | null
+          username?: string
+        }
+        Relationships: []
+      }
+      appointments: {
+        Row: {
+          appointment_date: string
+          branch: Database["public"]["Enums"]["branch"]
+          client_name: string
+          created_at: string
+          id: string
+          phone: string
+          price: number
+          service: string
+          special_requests: string | null
+          staff_name: string
+          time_slot: string
+        }
+        Insert: {
+          appointment_date: string
+          branch: Database["public"]["Enums"]["branch"]
+          client_name: string
+          created_at?: string
+          id?: string
+          phone: string
+          price: number
+          service: string
+          special_requests?: string | null
+          staff_name: string
+          time_slot: string
+        }
+        Update: {
+          appointment_date?: string
+          branch?: Database["public"]["Enums"]["branch"]
+          client_name?: string
+          created_at?: string
+          id?: string
+          phone?: string
+          price?: number
+          service?: string
+          special_requests?: string | null
+          staff_name?: string
+          time_slot?: string
+        }
+        Relationships: []
+      }
+      staff: {
+        Row: {
+          branch: Database["public"]["Enums"]["branch"]
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          branch: Database["public"]["Enums"]["branch"]
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          branch?: Database["public"]["Enums"]["branch"]
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +115,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      branch: "Vile Parle" | "Bandra"
+      user_role: "admin" | "manager" | "staff"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +243,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      branch: ["Vile Parle", "Bandra"],
+      user_role: ["admin", "manager", "staff"],
+    },
   },
 } as const
