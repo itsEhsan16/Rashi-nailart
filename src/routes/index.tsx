@@ -23,7 +23,7 @@ import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 import { BRANCHES, TIME_SLOTS, SERVICES, type Branch } from "@/lib/salon-data";
-import { bookAppointmentFn } from "@/lib/salon.functions";
+import { bookAppointmentFn, getBookedSlotsFn } from "@/lib/salon.functions";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/")({
@@ -54,6 +54,7 @@ const schema = z.object({
 function HomePage() {
   const navigate = useNavigate();
   const book = useServerFn(bookAppointmentFn);
+  const fetchBooked = useServerFn(getBookedSlotsFn);
 
   const [form, setForm] = useState<{
     client_name: string;
@@ -77,6 +78,7 @@ function HomePage() {
 
   const [staffList, setStaffList] = useState<{ name: string; branch: string }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
 
   useEffect(() => {
     supabase
@@ -85,6 +87,35 @@ function HomePage() {
       .order("name")
       .then(({ data }) => setStaffList(data ?? []));
   }, []);
+
+  // Re-check taken slots whenever branch + staff + date change
+  useEffect(() => {
+    if (!form.branch || !form.staff_name || !form.appointment_date) {
+      setBookedSlots([]);
+      return;
+    }
+    let cancelled = false;
+    fetchBooked({
+      data: {
+        branch: form.branch,
+        staff_name: form.staff_name,
+        appointment_date: format(form.appointment_date, "yyyy-MM-dd"),
+      },
+    }).then((res) => {
+      if (cancelled) return;
+      if (res.ok) {
+        setBookedSlots(res.slots);
+        if (form.time_slot && res.slots.includes(form.time_slot)) {
+          setForm((f) => ({ ...f, time_slot: "" }));
+          toast.error("That slot was just booked. Please choose another.");
+        }
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.branch, form.staff_name, form.appointment_date]);
 
   const filteredStaff = form.branch
     ? staffList.filter((s) => s.branch === form.branch)
@@ -245,14 +276,33 @@ function HomePage() {
                 <Select
                   value={form.time_slot}
                   onValueChange={(v) => setForm({ ...form, time_slot: v })}
+                  disabled={!form.branch || !form.staff_name || !form.appointment_date}
                 >
-                  <SelectTrigger><SelectValue placeholder="Choose time" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        !form.staff_name || !form.appointment_date
+                          ? "Pick staff & date first"
+                          : "Choose time"
+                      }
+                    />
+                  </SelectTrigger>
                   <SelectContent>
-                    {TIME_SLOTS.map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
+                    {TIME_SLOTS.map((t) => {
+                      const taken = bookedSlots.includes(t);
+                      return (
+                        <SelectItem key={t} value={t} disabled={taken}>
+                          {t}{taken ? " — Already booked" : ""}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
+                {form.staff_name && form.appointment_date && bookedSlots.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {bookedSlots.length} slot{bookedSlots.length > 1 ? "s" : ""} already booked for {form.staff_name}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
