@@ -55,9 +55,44 @@ export const bookAppointmentFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    // Prevent double-booking: same staff + branch + date + slot
+    const { data: clash } = await supabaseAdmin
+      .from("appointments")
+      .select("id")
+      .eq("branch", data.branch)
+      .eq("staff_name", data.staff_name)
+      .eq("appointment_date", data.appointment_date)
+      .eq("time_slot", data.time_slot)
+      .maybeSingle();
+    if (clash) {
+      return {
+        ok: false as const,
+        error: `This slot is already booked for ${data.staff_name} on ${data.appointment_date} at ${data.time_slot}. Please pick another time or stylist.`,
+      };
+    }
     const { error } = await supabaseAdmin.from("appointments").insert(data);
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };
+  });
+
+// ---------- BOOKED SLOTS (public) ----------
+export const getBookedSlotsFn = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      branch: z.enum(["Vile Parle", "Bandra"]),
+      staff_name: z.string().min(1).max(50),
+      appointment_date: z.string().min(1),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { data: rows, error } = await supabaseAdmin
+      .from("appointments")
+      .select("time_slot")
+      .eq("branch", data.branch)
+      .eq("staff_name", data.staff_name)
+      .eq("appointment_date", data.appointment_date);
+    if (error) return { ok: false as const, error: error.message, slots: [] as string[] };
+    return { ok: true as const, slots: (rows ?? []).map((r) => r.time_slot) };
   });
 
 // ---------- LIST APPOINTMENTS (role-aware) ----------
