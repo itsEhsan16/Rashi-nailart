@@ -47,6 +47,13 @@ export const Route = createRootRoute({
         rel: "preconnect",
         href: "https://fonts.googleapis.com",
       },
+      { name: "twitter:title", content: "Rashi Nail Art Studio — Salon Appointment Booking" },
+      { name: "description", content: "SalonBook Pro is a modern, responsive web app for salon appointment booking." },
+      { property: "og:description", content: "SalonBook Pro is a modern, responsive web app for salon appointment booking." },
+      { name: "twitter:description", content: "SalonBook Pro is a modern, responsive web app for salon appointment booking." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/28a85d53-fbe8-4103-a660-a36a1247f546/id-preview-76db7079--654b65da-335c-4288-ac16-44f0723a1c9b.lovable.app-1777357177599.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/28a85d53-fbe8-4103-a660-a36a1247f546/id-preview-76db7079--654b65da-335c-4288-ac16-44f0723a1c9b.lovable.app-1777357177599.png" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
