@@ -96,12 +96,7 @@ function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-6 rounded-lg bg-muted/60 p-4 text-xs text-muted-foreground space-y-1">
-            <div className="font-medium text-foreground mb-1">Demo accounts (password: <code>password123</code>)</div>
-            <div><code>admin</code> — full access</div>
-            <div><code>manager</code> — view all bookings</div>
-            <div><code>divya</code>, <code>karishma</code> — staff view</div>
-          </div>
+
         </Card>
       </main>
     </div>
