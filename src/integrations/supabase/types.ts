@@ -50,9 +50,13 @@ export type Database = {
           branch: Database["public"]["Enums"]["branch"]
           client_name: string
           created_at: string
+          discount_applied: number
           id: string
+          is_member: boolean
+          payment_status: string
           phone: string
           price: number
+          razorpay_order_id: string | null
           service: string
           special_requests: string | null
           staff_name: string
@@ -63,9 +67,13 @@ export type Database = {
           branch: Database["public"]["Enums"]["branch"]
           client_name: string
           created_at?: string
+          discount_applied?: number
           id?: string
+          is_member?: boolean
+          payment_status?: string
           phone: string
           price: number
+          razorpay_order_id?: string | null
           service: string
           special_requests?: string | null
           staff_name: string
@@ -76,15 +84,111 @@ export type Database = {
           branch?: Database["public"]["Enums"]["branch"]
           client_name?: string
           created_at?: string
+          discount_applied?: number
           id?: string
+          is_member?: boolean
+          payment_status?: string
           phone?: string
           price?: number
+          razorpay_order_id?: string | null
           service?: string
           special_requests?: string | null
           staff_name?: string
           time_slot?: string
         }
         Relationships: []
+      }
+      memberships: {
+        Row: {
+          active: boolean
+          amount_paid: number
+          client_name: string
+          created_at: string
+          expires_at: string
+          id: string
+          phone: string
+          start_date: string
+        }
+        Insert: {
+          active?: boolean
+          amount_paid?: number
+          client_name: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          phone: string
+          start_date?: string
+        }
+        Update: {
+          active?: boolean
+          amount_paid?: number
+          client_name?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          phone?: string
+          start_date?: string
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          appointment_id: string | null
+          client_name: string | null
+          created_at: string
+          currency: string
+          id: string
+          membership_id: string | null
+          metadata: Json | null
+          phone: string | null
+          purpose: string
+          razorpay_order_id: string | null
+          razorpay_payment_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          appointment_id?: string | null
+          client_name?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          membership_id?: string | null
+          metadata?: Json | null
+          phone?: string | null
+          purpose: string
+          razorpay_order_id?: string | null
+          razorpay_payment_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          appointment_id?: string | null
+          client_name?: string | null
+          created_at?: string
+          currency?: string
+          id?: string
+          membership_id?: string | null
+          metadata?: Json | null
+          phone?: string | null
+          purpose?: string
+          razorpay_order_id?: string | null
+          razorpay_payment_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_membership_id_fkey"
+            columns: ["membership_id"]
+            isOneToOne: false
+            referencedRelation: "memberships"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       staff: {
         Row: {
@@ -115,7 +219,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      branch: "Vile Parle" | "Bandra"
+      branch: "Vile Parle" | "Bandra" | "Kandivali"
       user_role: "admin" | "manager" | "staff"
     }
     CompositeTypes: {
@@ -244,7 +348,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      branch: ["Vile Parle", "Bandra"],
+      branch: ["Vile Parle", "Bandra", "Kandivali"],
       user_role: ["admin", "manager", "staff"],
     },
   },
