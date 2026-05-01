@@ -45,7 +45,7 @@ export const bookAppointmentFn = createServerFn({ method: "POST" })
     z.object({
       client_name: z.string().trim().min(1).max(100),
       phone: z.string().trim().min(7).max(20),
-      branch: z.enum(["Vile Parle", "Bandra"]),
+      branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]),
       appointment_date: z.string().min(1),
       time_slot: z.string().min(1).max(50),
       service: z.string().min(1).max(100),
@@ -79,7 +79,7 @@ export const bookAppointmentFn = createServerFn({ method: "POST" })
 export const getBookedSlotsFn = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
-      branch: z.enum(["Vile Parle", "Bandra"]),
+      branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]),
       staff_name: z.string().min(1).max(50),
       appointment_date: z.string().min(1),
     })
@@ -99,7 +99,7 @@ export const getBookedSlotsFn = createServerFn({ method: "POST" })
 const sessionSchema = z.object({
   id: z.string().uuid(),
   role: z.enum(["admin", "manager", "staff"]),
-  branch: z.enum(["Vile Parle", "Bandra"]).nullable(),
+  branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]).nullable(),
   staffName: z.string().nullable(),
 });
 
@@ -110,7 +110,7 @@ export const listAppointmentsFn = createServerFn({ method: "POST" })
       filters: z
         .object({
           date: z.string().optional(),
-          branch: z.enum(["Vile Parle", "Bandra"]).optional(),
+          branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]).optional(),
           staff: z.string().optional(),
         })
         .optional(),
@@ -163,7 +163,7 @@ export const addStaffFn = createServerFn({ method: "POST" })
     z.object({
       adminId: z.string().uuid(),
       name: z.string().trim().min(1).max(50),
-      branch: z.enum(["Vile Parle", "Bandra"]),
+      branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]),
     })
   )
   .handler(async ({ data }) => {
@@ -218,7 +218,7 @@ const credInput = z.object({
   username: z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9._-]+$/, "Use letters, numbers, . _ -"),
   password: z.string().min(6).max(64),
   staff_name: z.string().trim().min(1).max(50),
-  branch: z.enum(["Vile Parle", "Bandra"]),
+  branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]),
 });
 
 export const createCredentialFn = createServerFn({ method: "POST" })
@@ -250,7 +250,7 @@ export const bulkCreateCredentialsFn = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       actorId: z.string().uuid(),
-      branch: z.enum(["Vile Parle", "Bandra"]).optional(),
+      branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]).optional(),
       defaultPassword: z.string().min(6).max(64).optional(),
     })
   )
