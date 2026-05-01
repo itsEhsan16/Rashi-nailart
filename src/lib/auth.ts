@@ -5,7 +5,7 @@ export type Session = {
   id: string;
   username: string;
   role: "admin" | "manager" | "staff";
-  branch: "Vile Parle" | "Bandra" | null;
+  branch: "Vile Parle" | "Bandra" | "Kandivali" | null;
   staffName: string | null;
 };
 
