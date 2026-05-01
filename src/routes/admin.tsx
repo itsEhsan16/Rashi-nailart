@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
-import { CalendarIcon, Trash2, UserPlus, X } from "lucide-react";
+import { CalendarIcon, Trash2, UserPlus, X, Crown } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,9 @@ type Appt = {
   staff_name: string;
   special_requests: string | null;
   created_at: string;
+  payment_status?: string;
+  is_member?: boolean;
+  discount_applied?: number;
 };
 type StaffRow = { id: string; name: string; branch: string };
 
@@ -188,29 +191,59 @@ export function AppointmentsView({
                 <TableHead>Time</TableHead>
                 <TableHead>Service</TableHead>
                 <TableHead>Staff</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Notes</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
                     No appointments found.
                   </TableCell>
                 </TableRow>
               )}
               {rows.map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-medium">{r.client_name}</TableCell>
+                <TableRow
+                  key={r.id}
+                  className={cn(
+                    r.is_member && "bg-primary/5 hover:bg-primary/10",
+                    r.payment_status === "pending" && "opacity-60"
+                  )}
+                >
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      {r.client_name}
+                      {r.is_member && (
+                        <Badge className="bg-primary text-primary-foreground gap-1">
+                          <Crown className="h-3 w-3" /> Member
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>{r.phone}</TableCell>
                   <TableCell><Badge variant="secondary">{r.branch}</Badge></TableCell>
                   <TableCell>{format(new Date(r.appointment_date), "dd MMM yyyy")}</TableCell>
                   <TableCell className="whitespace-nowrap">{r.time_slot}</TableCell>
                   <TableCell>
                     <div>{r.service}</div>
-                    <div className="text-xs text-muted-foreground">₹{r.price}</div>
+                    <div className="text-xs text-muted-foreground">
+                      ₹{r.price}
+                      {r.discount_applied && r.discount_applied > 0 ? (
+                        <span className="ml-1 text-primary">(−₹{r.discount_applied})</span>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell>{r.staff_name}</TableCell>
+                  <TableCell>
+                    {r.payment_status === "paid" ? (
+                      <Badge className="bg-emerald-600 text-white">Paid</Badge>
+                    ) : r.payment_status === "cancelled" ? (
+                      <Badge variant="destructive">Cancelled</Badge>
+                    ) : (
+                      <Badge variant="outline">Pending</Badge>
+                    )}
+                  </TableCell>
                   <TableCell className="max-w-[220px] text-sm text-muted-foreground">
                     {r.special_requests || "—"}
                   </TableCell>

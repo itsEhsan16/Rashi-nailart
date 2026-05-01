@@ -1,4 +1,4 @@
-export const BRANCHES = ["Vile Parle", "Bandra"] as const;
+export const BRANCHES = ["Vile Parle", "Bandra", "Kandivali"] as const;
 export type Branch = (typeof BRANCHES)[number];
 
 export const TIME_SLOTS = [
@@ -16,3 +16,6 @@ export const SERVICES = [
   { name: "Soft Gel Extension Nails", price: 499 },
   { name: "Acrylic Extension Nails", price: 799 },
 ] as const;
+
+export const MEMBERSHIP_PRICE = 100; // ₹100 / year
+export const BOOKING_FEE = 50; // ₹50 booking fee paid before confirmation
