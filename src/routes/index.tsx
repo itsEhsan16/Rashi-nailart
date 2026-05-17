@@ -59,9 +59,7 @@ const schema = z.object({
 
 function HomePage() {
   const navigate = useNavigate();
-  const createBookingOrder = useServerFn(createBookingOrderFn);
-  const createMembershipOrder = useServerFn(createMembershipOrderFn);
-  const verifyPayment = useServerFn(verifyPaymentFn);
+  const bookAppointment = useServerFn(bookAppointmentFn);
   const checkMembership = useServerFn(checkMembershipFn);
 
   const [form, setForm] = useState<{
