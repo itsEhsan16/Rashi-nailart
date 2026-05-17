@@ -130,9 +130,12 @@ function HomePage() {
     }
     const service = SERVICES.find((s) => s.name === parsed.data.service);
     if (!service) { toast.error("Select a valid service"); return; }
+    const finalPrice = isMember && /nail/i.test(service.name)
+      ? Math.round(service.price * 0.5)
+      : service.price;
     setSubmitting(true);
     try {
-      const order = await createBookingOrder({
+      const res = await bookAppointment({
         data: {
           client_name: parsed.data.client_name,
           phone: parsed.data.phone,
@@ -140,76 +143,29 @@ function HomePage() {
           appointment_date: format(parsed.data.appointment_date, "yyyy-MM-dd"),
           time_slot: parsed.data.time_slot,
           service: parsed.data.service,
-          price: service.price,
+          price: finalPrice,
           staff_name: parsed.data.staff_name,
           special_requests: parsed.data.special_requests || null,
         },
       });
-      if (!order.ok) { toast.error(order.error || "Could not start payment"); return; }
-
-      toast.message(`Pay ₹${BOOKING_FEE} booking fee to confirm`, {
-        description: order.isMember && order.discount > 0
-          ? `Member discount applied: ₹${order.discount} off your service.`
-          : undefined,
-      });
-
-      const result = await openRazorpayCheckout({
-        keyId: order.keyId,
-        orderId: order.orderId,
-        amount: order.amount,
-        currency: order.currency,
-        name: "Rashi Nail Art Studio",
-        description: `Booking fee · ${parsed.data.service}`,
-        prefill: { name: parsed.data.client_name, contact: parsed.data.phone },
-      });
-
-      const verify = await verifyPayment({ data: result });
-      if (!verify.ok) { toast.error(verify.error || "Could not verify payment"); return; }
-
-      toast.success("Payment received! Your appointment is confirmed ✨");
+      if (!res.ok) { toast.error(res.error || "Could not confirm booking"); return; }
+      toast.success("Your appointment is confirmed ✨");
       setForm({
         client_name: "", phone: "", branch: "",
         appointment_date: undefined, time_slot: "",
         service: "", staff_name: "", special_requests: "",
       });
     } catch (err: any) {
-      toast.error(err?.message || "Payment cancelled");
+      toast.error(err?.message || "Something went wrong");
     } finally {
       setSubmitting(false);
     }
   }
 
   async function onBuyMembership() {
-    if (!memberInfo.name.trim() || memberInfo.phone.trim().length < 7) {
-      toast.error("Enter name and a valid phone");
-      return;
-    }
-    setMemberPaying(true);
-    try {
-      const order = await createMembershipOrder({
-        data: { client_name: memberInfo.name.trim(), phone: memberInfo.phone.trim() },
-      });
-      if (!order.ok) { toast.error(order.error || "Could not start payment"); return; }
-      const result = await openRazorpayCheckout({
-        keyId: order.keyId,
-        orderId: order.orderId,
-        amount: order.amount,
-        currency: order.currency,
-        name: "Rashi Nail Art Studio",
-        description: "1 Year Membership",
-        prefill: { name: memberInfo.name, contact: memberInfo.phone },
-      });
-      const verify = await verifyPayment({ data: result });
-      if (!verify.ok) { toast.error(verify.error || "Could not verify payment"); return; }
-      toast.success("Membership activated! 50% off all nail art for 1 year ✨");
-      setMemberDialog(false);
-      // If the booking form is using same phone, refresh member state
-      if (form.phone === memberInfo.phone) setIsMember(true);
-    } catch (err: any) {
-      toast.error(err?.message || "Payment cancelled");
-    } finally {
-      setMemberPaying(false);
-    }
+    toast.message("Integrate payment gateway", {
+      description: "Connect a payment provider to enable membership purchases.",
+    });
   }
 
   return (
