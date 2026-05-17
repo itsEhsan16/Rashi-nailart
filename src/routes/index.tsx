@@ -243,7 +243,7 @@ function HomePage() {
                 <Input
                   value={form.client_name}
                   onChange={(e) => setForm({ ...form, client_name: e.target.value })}
-                  placeholder="Jane Doe"
+                  placeholder="Client Name"
                 />
               </div>
               <div className="space-y-2">
