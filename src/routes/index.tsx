@@ -251,7 +251,7 @@ function HomePage() {
                 <Input
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  placeholder="+91 9876543210"
+                  placeholder="+91 XXXXXXXXXX"
                 />
               </div>
             </div>
@@ -444,7 +444,7 @@ function HomePage() {
               <Input
                 value={memberInfo.phone}
                 onChange={(e) => setMemberInfo({ ...memberInfo, phone: e.target.value })}
-                placeholder="+91 9876543210"
+                placeholder="+91 XXXXXXXXXX"
               />
               <p className="text-xs text-muted-foreground">
                 We use your phone to recognize you at booking.
