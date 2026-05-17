@@ -29,13 +29,8 @@ import {
   BRANCHES, TIME_SLOTS, SERVICES, MEMBERSHIP_PRICE, BOOKING_FEE, type Branch,
 } from "@/lib/salon-data";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  createBookingOrderFn,
-  createMembershipOrderFn,
-  verifyPaymentFn,
-  checkMembershipFn,
-} from "@/lib/payments.functions";
-import { openRazorpayCheckout } from "@/lib/razorpay";
+import { checkMembershipFn } from "@/lib/payments.functions";
+import { bookAppointmentFn } from "@/lib/salon.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
