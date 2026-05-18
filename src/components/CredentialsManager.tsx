@@ -58,6 +58,7 @@ export function CredentialsManager({ session }: { session: Session }) {
 
   // individual create
   const [staffName, setStaffName] = useState("");
+  const [role, setRole] = useState<"staff" | "manager">("staff");
   const [branch, setBranch] = useState<Branch | "">("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
