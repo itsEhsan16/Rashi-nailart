@@ -86,8 +86,12 @@ export function CredentialsManager({ session }: { session: Session }) {
 
   async function onCreateOne(e: React.FormEvent) {
     e.preventDefault();
-    if (!staffName.trim() || !branch || !username.trim() || !password) {
+    if (!staffName.trim() || !username.trim() || !password) {
       toast.error("Fill all fields");
+      return;
+    }
+    if (role === "staff" && !branch) {
+      toast.error("Choose a branch for staff");
       return;
     }
     const res = await createFn({
@@ -97,7 +101,8 @@ export function CredentialsManager({ session }: { session: Session }) {
           username: username.trim().toLowerCase(),
           password,
           staff_name: staffName.trim(),
-          branch,
+          branch: role === "staff" ? (branch as Branch) : null,
+          role,
         },
       },
     });
@@ -105,13 +110,13 @@ export function CredentialsManager({ session }: { session: Session }) {
     setResultTitle("Credential created");
     setResultCreds([{
       staff_name: staffName.trim(),
-      branch,
+      branch: role === "staff" ? (branch as string) : "Manager",
       username: res.credential.username,
       password: res.credential.password,
     }]);
     setResultSkipped([]);
     setResultOpen(true);
-    setStaffName(""); setBranch(""); setUsername(""); setPassword("");
+    setStaffName(""); setBranch(""); setUsername(""); setPassword(""); setRole("staff");
     void load();
   }
 
