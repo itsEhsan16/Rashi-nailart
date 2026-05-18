@@ -26,7 +26,7 @@ import { CredentialsManager } from "@/components/CredentialsManager";
 import { getSession, type Session } from "@/lib/auth";
 import { BRANCHES, type Branch } from "@/lib/salon-data";
 import {
-  listAppointmentsFn, deleteAppointmentFn,
+  listAppointmentsFn, deleteAppointmentFn, completeAppointmentFn,
 } from "@/lib/salon.functions";
 
 export const Route = createFileRoute("/admin")({
