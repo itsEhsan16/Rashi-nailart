@@ -391,7 +391,7 @@ export const deleteCredentialFn = createServerFn({ method: "POST" })
       .eq("id", data.userId)
       .maybeSingle();
     if (!target) return { ok: false as const, error: "User not found" };
-    if (target.role !== "staff") return { ok: false as const, error: "Can only delete staff logins" };
+    if (target.role === "admin") return { ok: false as const, error: "Cannot delete admin login" };
     const { error } = await supabaseAdmin.from("app_users").delete().eq("id", data.userId);
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };
