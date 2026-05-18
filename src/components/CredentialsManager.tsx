@@ -82,7 +82,7 @@ export function CredentialsManager({ session }: { session: Session }) {
   }
   useEffect(() => { void load(); }, []);
 
-  const staffUsers = useMemo(() => users.filter((u) => u.role === "staff"), [users]);
+  const staffUsers = useMemo(() => users.filter((u) => u.role !== "admin"), [users]);
 
   async function onCreateOne(e: React.FormEvent) {
     e.preventDefault();
