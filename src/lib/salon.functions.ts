@@ -218,7 +218,8 @@ const credInput = z.object({
   username: z.string().trim().toLowerCase().min(3).max(40).regex(/^[a-z0-9._-]+$/, "Use letters, numbers, . _ -"),
   password: z.string().min(6).max(64),
   staff_name: z.string().trim().min(1).max(50),
-  branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]),
+  branch: z.enum(["Vile Parle", "Bandra", "Kandivali"]).nullable().optional(),
+  role: z.enum(["staff", "manager"]).default("staff"),
 });
 
 export const createCredentialFn = createServerFn({ method: "POST" })
@@ -235,15 +236,56 @@ export const createCredentialFn = createServerFn({ method: "POST" })
       .maybeSingle();
     if (existing) return { ok: false as const, error: `Username "${c.username}" already exists` };
 
+    // Managers have no branch; staff require a branch
+    if (c.role === "staff" && !c.branch) {
+      return { ok: false as const, error: "Branch is required for staff" };
+    }
+
     const { error } = await supabaseAdmin.from("app_users").insert({
       username: c.username,
       password_hash: sha256(c.password),
-      role: "staff",
-      branch: c.branch,
+      role: c.role,
+      branch: c.role === "manager" ? null : c.branch,
       staff_name: c.staff_name,
     });
     if (error) return { ok: false as const, error: error.message };
-    return { ok: true as const, credential: { username: c.username, password: c.password } };
+    return { ok: true as const, credential: { username: c.username, password: c.password, role: c.role } };
+  });
+
+// ---------- DELETE APPOINTMENT (admin) ----------
+export const deleteAppointmentFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ adminId: z.string().uuid(), appointmentId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { data: u } = await supabaseAdmin
+      .from("app_users")
+      .select("role")
+      .eq("id", data.adminId)
+      .maybeSingle();
+    if (!u || u.role !== "admin") return { ok: false as const, error: "Unauthorized" };
+    const { error } = await supabaseAdmin.from("appointments").delete().eq("id", data.appointmentId);
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const };
+  });
+
+// ---------- COMPLETE APPOINTMENT (staff) ----------
+export const completeAppointmentFn = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ staffId: z.string().uuid(), appointmentId: z.string().uuid() }))
+  .handler(async ({ data }) => {
+    const { data: u } = await supabaseAdmin
+      .from("app_users")
+      .select("role, staff_name")
+      .eq("id", data.staffId)
+      .maybeSingle();
+    if (!u) return { ok: false as const, error: "Unauthorized" };
+    // Staff can only complete their own; admin/manager can complete any
+    let q = supabaseAdmin
+      .from("appointments")
+      .update({ completed: true, completed_at: new Date().toISOString() })
+      .eq("id", data.appointmentId);
+    if (u.role === "staff") q = q.eq("staff_name", u.staff_name ?? "__none__");
+    const { error } = await q;
+    if (error) return { ok: false as const, error: error.message };
+    return { ok: true as const };
   });
 
 export const bulkCreateCredentialsFn = createServerFn({ method: "POST" })
@@ -327,7 +369,7 @@ export const resetCredentialPasswordFn = createServerFn({ method: "POST" })
       .eq("id", data.userId)
       .maybeSingle();
     if (!target) return { ok: false as const, error: "User not found" };
-    if (target.role !== "staff") return { ok: false as const, error: "Can only reset staff passwords" };
+    if (target.role === "admin") return { ok: false as const, error: "Cannot reset admin password here" };
 
     const password = data.newPassword || genPassword(10);
     const { error } = await supabaseAdmin
@@ -349,7 +391,7 @@ export const deleteCredentialFn = createServerFn({ method: "POST" })
       .eq("id", data.userId)
       .maybeSingle();
     if (!target) return { ok: false as const, error: "User not found" };
-    if (target.role !== "staff") return { ok: false as const, error: "Can only delete staff logins" };
+    if (target.role === "admin") return { ok: false as const, error: "Cannot delete admin login" };
     const { error } = await supabaseAdmin.from("app_users").delete().eq("id", data.userId);
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };

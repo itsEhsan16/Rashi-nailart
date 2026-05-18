@@ -58,6 +58,7 @@ export function CredentialsManager({ session }: { session: Session }) {
 
   // individual create
   const [staffName, setStaffName] = useState("");
+  const [role, setRole] = useState<"staff" | "manager">("staff");
   const [branch, setBranch] = useState<Branch | "">("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -81,12 +82,16 @@ export function CredentialsManager({ session }: { session: Session }) {
   }
   useEffect(() => { void load(); }, []);
 
-  const staffUsers = useMemo(() => users.filter((u) => u.role === "staff"), [users]);
+  const staffUsers = useMemo(() => users.filter((u) => u.role !== "admin"), [users]);
 
   async function onCreateOne(e: React.FormEvent) {
     e.preventDefault();
-    if (!staffName.trim() || !branch || !username.trim() || !password) {
+    if (!staffName.trim() || !username.trim() || !password) {
       toast.error("Fill all fields");
+      return;
+    }
+    if (role === "staff" && !branch) {
+      toast.error("Choose a branch for staff");
       return;
     }
     const res = await createFn({
@@ -96,7 +101,8 @@ export function CredentialsManager({ session }: { session: Session }) {
           username: username.trim().toLowerCase(),
           password,
           staff_name: staffName.trim(),
-          branch,
+          branch: role === "staff" ? (branch as Branch) : null,
+          role,
         },
       },
     });
@@ -104,13 +110,13 @@ export function CredentialsManager({ session }: { session: Session }) {
     setResultTitle("Credential created");
     setResultCreds([{
       staff_name: staffName.trim(),
-      branch,
+      branch: role === "staff" ? (branch as string) : "Manager",
       username: res.credential.username,
       password: res.credential.password,
     }]);
     setResultSkipped([]);
     setResultOpen(true);
-    setStaffName(""); setBranch(""); setUsername(""); setPassword("");
+    setStaffName(""); setBranch(""); setUsername(""); setPassword(""); setRole("staff");
     void load();
   }
 
@@ -172,18 +178,30 @@ export function CredentialsManager({ session }: { session: Session }) {
           </p>
           <form onSubmit={onCreateOne} className="mt-4 grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5 sm:col-span-1">
-              <Label>Staff name</Label>
+              <Label>Name</Label>
               <Input value={staffName} onChange={(e) => setStaffName(e.target.value)} placeholder="Divya" />
             </div>
             <div className="space-y-1.5 sm:col-span-1">
-              <Label>Branch</Label>
-              <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
-                <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
+              <Label>Role</Label>
+              <Select value={role} onValueChange={(v) => setRole(v as "staff" | "manager")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  <SelectItem value="staff">Staff</SelectItem>
+                  <SelectItem value="manager">Manager</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {role === "staff" && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Branch</Label>
+                <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
+                  <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
+                  <SelectContent>
+                    {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5 sm:col-span-1">
               <Label>Username</Label>
               <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="divya" />
@@ -245,7 +263,8 @@ export function CredentialsManager({ session }: { session: Session }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Username</TableHead>
-                <TableHead>Staff name</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Role</TableHead>
                 <TableHead>Branch</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -253,8 +272,8 @@ export function CredentialsManager({ session }: { session: Session }) {
             <TableBody>
               {staffUsers.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                    No staff logins yet.
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    No logins yet.
                   </TableCell>
                 </TableRow>
               )}
@@ -262,6 +281,9 @@ export function CredentialsManager({ session }: { session: Session }) {
                 <TableRow key={u.id}>
                   <TableCell className="font-mono">{u.username}</TableCell>
                   <TableCell>{u.staff_name}</TableCell>
+                  <TableCell>
+                    <Badge variant={u.role === "manager" ? "default" : "outline"} className="capitalize">{u.role}</Badge>
+                  </TableCell>
                   <TableCell>{u.branch && <Badge variant="secondary">{u.branch}</Badge>}</TableCell>
                   <TableCell className="text-right space-x-2">
                     <Button size="sm" variant="outline" onClick={() => onReset(u.id)}>

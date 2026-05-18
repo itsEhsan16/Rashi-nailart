@@ -49,6 +49,8 @@ export type Database = {
           appointment_date: string
           branch: Database["public"]["Enums"]["branch"]
           client_name: string
+          completed: boolean
+          completed_at: string | null
           created_at: string
           discount_applied: number
           id: string
@@ -66,6 +68,8 @@ export type Database = {
           appointment_date: string
           branch: Database["public"]["Enums"]["branch"]
           client_name: string
+          completed?: boolean
+          completed_at?: string | null
           created_at?: string
           discount_applied?: number
           id?: string
@@ -83,6 +87,8 @@ export type Database = {
           appointment_date?: string
           branch?: Database["public"]["Enums"]["branch"]
           client_name?: string
+          completed?: boolean
+          completed_at?: string | null
           created_at?: string
           discount_applied?: number
           id?: string
