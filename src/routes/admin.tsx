@@ -72,14 +72,10 @@ function AdminPage() {
       <Tabs defaultValue="appointments">
         <TabsList>
           <TabsTrigger value="appointments">Appointments</TabsTrigger>
-          <TabsTrigger value="staff">Manage Staff</TabsTrigger>
           <TabsTrigger value="credentials">Login Credentials</TabsTrigger>
         </TabsList>
         <TabsContent value="appointments" className="mt-6">
-          <AppointmentsView session={session} canFilter />
-        </TabsContent>
-        <TabsContent value="staff" className="mt-6">
-          <StaffManager session={session} />
+          <AppointmentsView session={session} canFilter canDelete />
         </TabsContent>
         <TabsContent value="credentials" className="mt-6">
           <CredentialsManager session={session} />
