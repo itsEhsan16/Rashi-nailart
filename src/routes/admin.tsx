@@ -88,11 +88,17 @@ function AdminPage() {
 export function AppointmentsView({
   session,
   canFilter,
+  canDelete,
+  canComplete,
 }: {
   session: Session;
   canFilter?: boolean;
+  canDelete?: boolean;
+  canComplete?: boolean;
 }) {
   const list = useServerFn(listAppointmentsFn);
+  const del = useServerFn(deleteAppointmentFn);
+  const complete = useServerFn(completeAppointmentFn);
   const [rows, setRows] = useState<Appt[]>([]);
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState<Date | undefined>();
