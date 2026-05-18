@@ -49,6 +49,7 @@ type Appt = {
   payment_status?: string;
   is_member?: boolean;
   discount_applied?: number;
+  completed?: boolean;
 };
 
 
