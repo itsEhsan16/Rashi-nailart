@@ -369,7 +369,7 @@ export const resetCredentialPasswordFn = createServerFn({ method: "POST" })
       .eq("id", data.userId)
       .maybeSingle();
     if (!target) return { ok: false as const, error: "User not found" };
-    if (target.role !== "staff") return { ok: false as const, error: "Can only reset staff passwords" };
+    if (target.role === "admin") return { ok: false as const, error: "Cannot reset admin password here" };
 
     const password = data.newPassword || genPassword(10);
     const { error } = await supabaseAdmin
