@@ -178,18 +178,30 @@ export function CredentialsManager({ session }: { session: Session }) {
           </p>
           <form onSubmit={onCreateOne} className="mt-4 grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5 sm:col-span-1">
-              <Label>Staff name</Label>
+              <Label>Name</Label>
               <Input value={staffName} onChange={(e) => setStaffName(e.target.value)} placeholder="Divya" />
             </div>
             <div className="space-y-1.5 sm:col-span-1">
-              <Label>Branch</Label>
-              <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
-                <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
+              <Label>Role</Label>
+              <Select value={role} onValueChange={(v) => setRole(v as "staff" | "manager")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  <SelectItem value="staff">Staff</SelectItem>
+                  <SelectItem value="manager">Manager</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {role === "staff" && (
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Branch</Label>
+                <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
+                  <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
+                  <SelectContent>
+                    {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5 sm:col-span-1">
               <Label>Username</Label>
               <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="divya" />
