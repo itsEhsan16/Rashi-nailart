@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { format } from "date-fns";
-import { CalendarIcon, Trash2, UserPlus, X, Crown } from "lucide-react";
+import { CalendarIcon, Trash2, X, Crown, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
