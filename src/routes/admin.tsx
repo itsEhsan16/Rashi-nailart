@@ -50,7 +50,7 @@ type Appt = {
   is_member?: boolean;
   discount_applied?: number;
 };
-type StaffRow = { id: string; name: string; branch: string };
+
 
 function AdminPage() {
   const navigate = useNavigate();
