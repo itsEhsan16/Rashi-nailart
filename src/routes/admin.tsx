@@ -196,12 +196,13 @@ export function AppointmentsView({
                 <TableHead>Staff</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Notes</TableHead>
+                {(canDelete || canComplete) && <TableHead className="text-right">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={canDelete || canComplete ? 10 : 9} className="text-center py-10 text-muted-foreground">
                     No appointments found.
                   </TableCell>
                 </TableRow>
@@ -211,7 +212,8 @@ export function AppointmentsView({
                   key={r.id}
                   className={cn(
                     r.is_member && "bg-primary/5 hover:bg-primary/10",
-                    r.payment_status === "pending" && "opacity-60"
+                    r.payment_status === "pending" && "opacity-60",
+                    r.completed && "bg-emerald-500/5"
                   )}
                 >
                   <TableCell className="font-medium">
@@ -239,7 +241,11 @@ export function AppointmentsView({
                   </TableCell>
                   <TableCell>{r.staff_name}</TableCell>
                   <TableCell>
-                    {r.payment_status === "paid" ? (
+                    {r.completed ? (
+                      <Badge className="bg-emerald-600 text-white gap-1">
+                        <CheckCircle2 className="h-3 w-3" /> Completed
+                      </Badge>
+                    ) : r.payment_status === "paid" ? (
                       <Badge className="bg-emerald-600 text-white">Paid</Badge>
                     ) : r.payment_status === "cancelled" ? (
                       <Badge variant="destructive">Cancelled</Badge>
@@ -250,101 +256,46 @@ export function AppointmentsView({
                   <TableCell className="max-w-[220px] text-sm text-muted-foreground">
                     {r.special_requests || "—"}
                   </TableCell>
+                  {(canDelete || canComplete) && (
+                    <TableCell className="text-right space-x-1 whitespace-nowrap">
+                      {canComplete && !r.completed && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            const res = await complete({ data: { staffId: session.id, appointmentId: r.id } });
+                            if (!res.ok) { toast.error(res.error); return; }
+                            toast.success("Marked complete");
+                            void load();
+                          }}
+                        >
+                          <CheckCircle2 className="h-4 w-4 mr-1" /> Complete
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          onClick={async () => {
+                            if (!confirm(`Delete appointment for ${r.client_name}?`)) return;
+                            const res = await del({ data: { adminId: session.id, appointmentId: r.id } });
+                            if (!res.ok) { toast.error(res.error); return; }
+                            toast.success("Appointment deleted");
+                            void load();
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </div>
       </Card>
-    </div>
-  );
-}
-
-function StaffManager({ session }: { session: Session }) {
-  const listStaff = useServerFn(listStaffFn);
-  const addStaff = useServerFn(addStaffFn);
-  const removeStaff = useServerFn(removeStaffFn);
-  const [staff, setStaff] = useState<StaffRow[]>([]);
-  const [name, setName] = useState("");
-  const [branch, setBranch] = useState<Branch | "">("");
-
-  async function load() {
-    const res = await listStaff();
-    if (res.ok) setStaff(res.staff as StaffRow[]);
-  }
-  useEffect(() => { void load(); }, []);
-
-  async function onAdd(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim() || !branch) {
-      toast.error("Enter name and branch");
-      return;
-    }
-    const res = await addStaff({ data: { adminId: session.id, name: name.trim(), branch } });
-    if (!res.ok) { toast.error(res.error); return; }
-    toast.success("Staff added");
-    setName(""); setBranch("");
-    void load();
-  }
-
-  async function onRemove(id: string) {
-    const res = await removeStaff({ data: { adminId: session.id, staffId: id } });
-    if (!res.ok) { toast.error(res.error); return; }
-    toast.success("Staff removed");
-    void load();
-  }
-
-  const grouped = BRANCHES.map((b) => ({ branch: b, members: staff.filter((s) => s.branch === b) }));
-
-  return (
-    <div className="grid lg:grid-cols-3 gap-6">
-      <Card className="p-6 lg:col-span-1 h-fit">
-        <h3 className="font-display text-xl font-semibold flex items-center gap-2">
-          <UserPlus className="h-5 w-5 text-primary" /> Add Staff
-        </h3>
-        <form onSubmit={onAdd} className="mt-4 space-y-3">
-          <div className="space-y-1.5">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Branch</Label>
-            <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
-              <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
-              <SelectContent>
-                {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button type="submit" className="w-full bg-gradient-hero text-primary-foreground">
-            Add Staff Member
-          </Button>
-        </form>
-      </Card>
-
-      <div className="lg:col-span-2 space-y-6">
-        {grouped.map((g) => (
-          <Card key={g.branch} className="p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-display text-xl font-semibold">{g.branch}</h3>
-              <Badge variant="secondary">{g.members.length} members</Badge>
-            </div>
-            <div className="grid sm:grid-cols-2 gap-2">
-              {g.members.length === 0 && (
-                <div className="text-sm text-muted-foreground">No staff yet.</div>
-              )}
-              {g.members.map((m) => (
-                <div key={m.id} className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2 bg-background">
-                  <span className="font-medium">{m.name}</span>
-                  <Button size="icon" variant="ghost" onClick={() => onRemove(m.id)} className="h-8 w-8 text-destructive hover:text-destructive">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </Card>
-        ))}
-      </div>
     </div>
   );
 }
