@@ -263,7 +263,8 @@ export function CredentialsManager({ session }: { session: Session }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Username</TableHead>
-                <TableHead>Staff name</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Role</TableHead>
                 <TableHead>Branch</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -271,8 +272,8 @@ export function CredentialsManager({ session }: { session: Session }) {
             <TableBody>
               {staffUsers.length === 0 && !loading && (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                    No staff logins yet.
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    No logins yet.
                   </TableCell>
                 </TableRow>
               )}
@@ -280,6 +281,9 @@ export function CredentialsManager({ session }: { session: Session }) {
                 <TableRow key={u.id}>
                   <TableCell className="font-mono">{u.username}</TableCell>
                   <TableCell>{u.staff_name}</TableCell>
+                  <TableCell>
+                    <Badge variant={u.role === "manager" ? "default" : "outline"} className="capitalize">{u.role}</Badge>
+                  </TableCell>
                   <TableCell>{u.branch && <Badge variant="secondary">{u.branch}</Badge>}</TableCell>
                   <TableCell className="text-right space-x-2">
                     <Button size="sm" variant="outline" onClick={() => onReset(u.id)}>
