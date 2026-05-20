@@ -55,19 +55,22 @@ export const bookAppointmentFn = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    // Prevent double-booking: same staff + branch + date + slot
-    const { data: clash } = await supabaseAdmin
+    // Capacity per slot: 1 normally, 2 during peak season (Aug 1 – Dec 31)
+    const month = Number(data.appointment_date.slice(5, 7));
+    const isPeakSeason = month >= 8 && month <= 12;
+    const capacity = isPeakSeason ? 2 : 1;
+
+    const { data: existing } = await supabaseAdmin
       .from("appointments")
       .select("id")
       .eq("branch", data.branch)
       .eq("staff_name", data.staff_name)
       .eq("appointment_date", data.appointment_date)
-      .eq("time_slot", data.time_slot)
-      .maybeSingle();
-    if (clash) {
+      .eq("time_slot", data.time_slot);
+    if ((existing?.length ?? 0) >= capacity) {
       return {
         ok: false as const,
-        error: `This slot is already booked for ${data.staff_name} on ${data.appointment_date} at ${data.time_slot}. Please pick another time or stylist.`,
+        error: `This slot is fully booked for ${data.staff_name} on ${data.appointment_date} at ${data.time_slot}. Please pick another time or stylist.`,
       };
     }
     const { error } = await supabaseAdmin.from("appointments").insert(data);
@@ -92,7 +95,13 @@ export const getBookedSlotsFn = createServerFn({ method: "POST" })
       .eq("staff_name", data.staff_name)
       .eq("appointment_date", data.appointment_date);
     if (error) return { ok: false as const, error: error.message, slots: [] as string[] };
-    return { ok: true as const, slots: (rows ?? []).map((r) => r.time_slot) };
+    // A slot is "full" if it has reached capacity (2 during Aug–Dec peak, else 1)
+    const month = Number(data.appointment_date.slice(5, 7));
+    const capacity = month >= 8 && month <= 12 ? 2 : 1;
+    const counts = new Map<string, number>();
+    for (const r of rows ?? []) counts.set(r.time_slot, (counts.get(r.time_slot) ?? 0) + 1);
+    const fullSlots = [...counts.entries()].filter(([, n]) => n >= capacity).map(([s]) => s);
+    return { ok: true as const, slots: fullSlots };
   });
 
 // ---------- LIST APPOINTMENTS (role-aware) ----------
