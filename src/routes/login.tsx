@@ -52,7 +52,10 @@ function LoginPage() {
             <div className="h-9 w-9 rounded-full bg-gradient-hero grid place-items-center shadow-soft">
               <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-display text-xl font-semibold">Rashi Nail Art Studio</span>
+            <span className="font-display font-semibold flex flex-col leading-tight">
+              <span className="text-xl">Rashi</span>
+              <span className="text-sm">Nail Art Studio</span>
+            </span>
           </Link>
           <Button variant="ghost" onClick={() => navigate({ to: "/" })}>
             <ArrowLeft className="mr-2 h-4 w-4" />
