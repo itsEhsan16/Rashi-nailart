@@ -217,6 +217,9 @@ function HomePage() {
               <p className="text-sm text-muted-foreground">
                 Get <span className="font-medium text-foreground">50% off any nail art service</span> for a full year.
               </p>
+              <p className="text-xs text-muted-foreground mt-1 italic">
+                Note: Membership benefits activate 10 days after purchase.
+              </p>
             </div>
           </div>
           <Button
