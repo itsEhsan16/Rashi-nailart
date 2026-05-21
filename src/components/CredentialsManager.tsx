@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Copy, KeyRound, Trash2, UserPlus, Users } from "lucide-react";
+import { Copy, KeyRound, Pencil, Trash2, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -73,6 +73,11 @@ export function CredentialsManager({ session }: { session: Session }) {
   const [resultSkipped, setResultSkipped] = useState<{ staff_name: string; reason: string }[]>([]);
   const [resultTitle, setResultTitle] = useState("Credentials created");
 
+  // edit password dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editUser, setEditUser] = useState<AppUser | null>(null);
+  const [editPassword, setEditPassword] = useState("");
+
   async function load() {
     setLoading(true);
     const res = await listFn({ data: { actorId: session.id } });
@@ -136,10 +141,19 @@ export function CredentialsManager({ session }: { session: Session }) {
     void load();
   }
 
-  async function onReset(userId: string) {
-    const res = await resetFn({ data: { actorId: session.id, userId } });
+  function openEdit(u: AppUser) {
+    setEditUser(u);
+    setEditPassword("");
+    setEditOpen(true);
+  }
+
+  async function onSavePassword() {
+    if (!editUser) return;
+    if (editPassword.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+    const res = await resetFn({ data: { actorId: session.id, userId: editUser.id, newPassword: editPassword } });
     if (!res.ok) { toast.error(res.error); return; }
-    setResultTitle("Password reset");
+    setEditOpen(false);
+    setResultTitle("Password updated");
     setResultCreds([{
       staff_name: res.username,
       branch: "",
@@ -286,8 +300,8 @@ export function CredentialsManager({ session }: { session: Session }) {
                   </TableCell>
                   <TableCell>{u.branch && <Badge variant="secondary">{u.branch}</Badge>}</TableCell>
                   <TableCell className="text-right space-x-2">
-                    <Button size="sm" variant="outline" onClick={() => onReset(u.id)}>
-                      <KeyRound className="h-4 w-4 mr-1" /> Reset password
+                    <Button size="sm" variant="outline" onClick={() => openEdit(u)}>
+                      <Pencil className="h-4 w-4 mr-1" /> Edit password
                     </Button>
                     <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => onDelete(u.id)}>
                       <Trash2 className="h-4 w-4" />
@@ -299,6 +313,33 @@ export function CredentialsManager({ session }: { session: Session }) {
           </Table>
         </div>
       </Card>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit password</DialogTitle>
+            <DialogDescription>
+              {editUser ? `Set a new password for ${editUser.staff_name ?? editUser.username}.` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>New password</Label>
+            <Input
+              type="text"
+              value={editPassword}
+              onChange={(e) => setEditPassword(e.target.value)}
+              placeholder="min 6 characters"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={onSavePassword} className="bg-gradient-hero text-primary-foreground">
+              <KeyRound className="h-4 w-4 mr-1" /> Save password
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={resultOpen} onOpenChange={setResultOpen}>
         <DialogContent className="max-w-2xl">
