@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
-import { Copy, KeyRound, Trash2, UserPlus, Users } from "lucide-react";
+import { Copy, KeyRound, Pencil, Trash2, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
