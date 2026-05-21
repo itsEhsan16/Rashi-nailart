@@ -73,6 +73,11 @@ export function CredentialsManager({ session }: { session: Session }) {
   const [resultSkipped, setResultSkipped] = useState<{ staff_name: string; reason: string }[]>([]);
   const [resultTitle, setResultTitle] = useState("Credentials created");
 
+  // edit password dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editUser, setEditUser] = useState<AppUser | null>(null);
+  const [editPassword, setEditPassword] = useState("");
+
   async function load() {
     setLoading(true);
     const res = await listFn({ data: { actorId: session.id } });
