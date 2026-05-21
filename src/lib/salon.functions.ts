@@ -316,16 +316,44 @@ export const bulkCreateCredentialsFn = createServerFn({ method: "POST" })
 
     const { data: existing } = await supabaseAdmin
       .from("app_users")
-      .select("staff_name")
+      .select("id, username, staff_name, branch")
       .eq("role", "staff");
-    const taken = new Set((existing ?? []).map((r) => (r.staff_name ?? "").toLowerCase()));
+    const existingByName = new Map(
+      (existing ?? []).map((r) => [(r.staff_name ?? "").toLowerCase(), r]),
+    );
 
     const created: { staff_name: string; branch: string; username: string; password: string }[] = [];
     const skipped: { staff_name: string; reason: string }[] = [];
 
+    // If a default password is provided, apply it to ALL existing staff logins
+    // in scope so the entire team shares the same password after bulk action.
+    if (data.defaultPassword) {
+      const hash = sha256(data.defaultPassword);
+      for (const s of staffRows ?? []) {
+        const ex = existingByName.get(s.name.toLowerCase());
+        if (!ex) continue;
+        const { error: uErr } = await supabaseAdmin
+          .from("app_users")
+          .update({ password_hash: hash })
+          .eq("id", ex.id);
+        if (uErr) {
+          skipped.push({ staff_name: s.name, reason: `Update failed: ${uErr.message}` });
+          continue;
+        }
+        created.push({
+          staff_name: s.name,
+          branch: s.branch,
+          username: ex.username,
+          password: data.defaultPassword,
+        });
+      }
+    }
+
     for (const s of staffRows ?? []) {
-      if (taken.has(s.name.toLowerCase())) {
-        skipped.push({ staff_name: s.name, reason: "Already has login" });
+      if (existingByName.has(s.name.toLowerCase())) {
+        if (!data.defaultPassword) {
+          skipped.push({ staff_name: s.name, reason: "Already has login" });
+        }
         continue;
       }
       const baseUsername = s.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
