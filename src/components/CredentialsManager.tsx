@@ -314,6 +314,33 @@ export function CredentialsManager({ session }: { session: Session }) {
         </div>
       </Card>
 
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit password</DialogTitle>
+            <DialogDescription>
+              {editUser ? `Set a new password for ${editUser.staff_name ?? editUser.username}.` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>New password</Label>
+            <Input
+              type="text"
+              value={editPassword}
+              onChange={(e) => setEditPassword(e.target.value)}
+              placeholder="min 6 characters"
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={onSavePassword} className="bg-gradient-hero text-primary-foreground">
+              <KeyRound className="h-4 w-4 mr-1" /> Save password
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={resultOpen} onOpenChange={setResultOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
