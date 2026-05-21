@@ -141,8 +141,8 @@ export const listAppointmentsFn = createServerFn({ method: "POST" })
       .order("time_slot", { ascending: true });
 
     if (u.role === "staff") {
-      // staff: only their own appointments
-      q = q.eq("staff_name", u.staff_name ?? "__none__");
+      // staff: only their own appointments (case-insensitive match)
+      q = q.ilike("staff_name", u.staff_name ?? "__none__");
     } else {
       // admin/manager filters
       const f = data.filters ?? {};
