@@ -141,10 +141,19 @@ export function CredentialsManager({ session }: { session: Session }) {
     void load();
   }
 
-  async function onReset(userId: string) {
-    const res = await resetFn({ data: { actorId: session.id, userId } });
+  function openEdit(u: AppUser) {
+    setEditUser(u);
+    setEditPassword("");
+    setEditOpen(true);
+  }
+
+  async function onSavePassword() {
+    if (!editUser) return;
+    if (editPassword.length < 6) { toast.error("Password must be at least 6 characters"); return; }
+    const res = await resetFn({ data: { actorId: session.id, userId: editUser.id, newPassword: editPassword } });
     if (!res.ok) { toast.error(res.error); return; }
-    setResultTitle("Password reset");
+    setEditOpen(false);
+    setResultTitle("Password updated");
     setResultCreds([{
       staff_name: res.username,
       branch: "",
