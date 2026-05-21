@@ -134,7 +134,8 @@ export function CredentialsManager({ session }: { session: Session }) {
       },
     });
     if (!res.ok) { toast.error(res.error); return; }
-    setResultTitle(`Bulk: ${res.created.length} created, ${res.skipped.length} skipped`);
+    const action = bulkPassword ? "synced" : "created";
+    setResultTitle(`Bulk: ${res.created.length} ${action}, ${res.skipped.length} skipped`);
     setResultCreds(res.created);
     setResultSkipped(res.skipped);
     setResultOpen(true);
@@ -236,7 +237,7 @@ export function CredentialsManager({ session }: { session: Session }) {
             <Users className="h-5 w-5 text-primary" /> Bulk create logins
           </h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Auto-generate logins for all staff members who don't have one yet. Usernames come from staff name.
+            Auto-generate logins for staff who don't have one yet. If you set a default password, it will also be applied to all existing staff logins in the selected scope — so the whole team shares the same password.
           </p>
           <div className="mt-4 grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
