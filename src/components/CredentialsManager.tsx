@@ -134,7 +134,8 @@ export function CredentialsManager({ session }: { session: Session }) {
       },
     });
     if (!res.ok) { toast.error(res.error); return; }
-    setResultTitle(`Bulk: ${res.created.length} created, ${res.skipped.length} skipped`);
+    const action = bulkPassword ? "synced" : "created";
+    setResultTitle(`Bulk: ${res.created.length} ${action}, ${res.skipped.length} skipped`);
     setResultCreds(res.created);
     setResultSkipped(res.skipped);
     setResultOpen(true);
