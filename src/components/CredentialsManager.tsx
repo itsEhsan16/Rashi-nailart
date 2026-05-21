@@ -300,8 +300,8 @@ export function CredentialsManager({ session }: { session: Session }) {
                   </TableCell>
                   <TableCell>{u.branch && <Badge variant="secondary">{u.branch}</Badge>}</TableCell>
                   <TableCell className="text-right space-x-2">
-                    <Button size="sm" variant="outline" onClick={() => onReset(u.id)}>
-                      <KeyRound className="h-4 w-4 mr-1" /> Reset password
+                    <Button size="sm" variant="outline" onClick={() => openEdit(u)}>
+                      <Pencil className="h-4 w-4 mr-1" /> Edit password
                     </Button>
                     <Button size="icon" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => onDelete(u.id)}>
                       <Trash2 className="h-4 w-4" />
