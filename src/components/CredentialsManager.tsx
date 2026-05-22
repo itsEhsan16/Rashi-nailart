@@ -236,10 +236,10 @@ export function CredentialsManager({ session }: { session: Session }) {
         {/* Bulk */}
         <Card className="p-6">
           <h3 className="font-display text-xl font-semibold flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" /> Bulk create logins
+            <Users className="h-5 w-5 text-primary" /> Bulk update password
           </h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Auto-generate logins for staff who don't have one yet. If you set a default password, it will also be applied to all existing staff logins in the selected scope — so the whole team shares the same password.
+            Set a single shared password for all existing staff logins in the selected scope. Staff who don't have a login yet will also get one created with this same password.
           </p>
           <div className="mt-4 grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -253,15 +253,15 @@ export function CredentialsManager({ session }: { session: Session }) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Default password (optional)</Label>
+              <Label>New password</Label>
               <Input
                 value={bulkPassword}
                 onChange={(e) => setBulkPassword(e.target.value)}
-                placeholder="Leave blank to auto-generate"
+                placeholder="min 6 characters"
               />
             </div>
             <Button onClick={onBulk} className="sm:col-span-2 bg-gradient-hero text-primary-foreground">
-              Generate logins
+              Update password
             </Button>
           </div>
         </Card>
