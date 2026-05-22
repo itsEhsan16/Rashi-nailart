@@ -199,7 +199,7 @@ export const addStaffFn = createServerFn({ method: "POST" })
 async function assertManagerOrAdmin(actorId: string) {
   const { data: u } = await supabaseAdmin
     .from("app_users")
-    .select("role")
+    .select("role, branch")
     .eq("id", actorId)
     .maybeSingle();
   if (!u || (u.role !== "admin" && u.role !== "manager")) return null;
@@ -219,11 +219,16 @@ export const listCredentialsFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const u = await assertManagerOrAdmin(data.actorId);
     if (!u) return { ok: false as const, error: "Unauthorized", users: [] };
-    const { data: rows, error } = await supabaseAdmin
+    let q = supabaseAdmin
       .from("app_users")
       .select("id, username, role, branch, staff_name, created_at")
       .order("role")
       .order("username");
+    // Managers only see logins in their own branch
+    if (u.role === "manager" && u.branch) {
+      q = q.eq("branch", u.branch);
+    }
+    const { data: rows, error } = await q;
     if (error) return { ok: false as const, error: error.message, users: [] };
     return { ok: true as const, users: rows ?? [] };
   });
