@@ -126,19 +126,23 @@ export function CredentialsManager({ session }: { session: Session }) {
   }
 
   async function onBulk() {
+    if (!bulkPassword || bulkPassword.length < 6) {
+      toast.error("Enter a password (min 6 characters)");
+      return;
+    }
     const res = await bulkFn({
       data: {
         actorId: session.id,
         branch: bulkBranch === "all" ? undefined : bulkBranch,
-        defaultPassword: bulkPassword || undefined,
+        defaultPassword: bulkPassword,
       },
     });
     if (!res.ok) { toast.error(res.error); return; }
-    const action = bulkPassword ? "synced" : "created";
-    setResultTitle(`Bulk: ${res.created.length} ${action}, ${res.skipped.length} skipped`);
+    setResultTitle(`Bulk: ${res.created.length} updated, ${res.skipped.length} skipped`);
     setResultCreds(res.created);
     setResultSkipped(res.skipped);
     setResultOpen(true);
+    setBulkPassword("");
     void load();
   }
 
