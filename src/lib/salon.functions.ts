@@ -445,11 +445,14 @@ export const deleteCredentialFn = createServerFn({ method: "POST" })
     if (!u) return { ok: false as const, error: "Unauthorized" };
     const { data: target } = await supabaseAdmin
       .from("app_users")
-      .select("role")
+      .select("role, branch")
       .eq("id", data.userId)
       .maybeSingle();
     if (!target) return { ok: false as const, error: "User not found" };
     if (target.role === "admin") return { ok: false as const, error: "Cannot delete admin login" };
+    if (u.role === "manager" && u.branch && target.branch !== u.branch) {
+      return { ok: false as const, error: "Out of your branch scope" };
+    }
     const { error } = await supabaseAdmin.from("app_users").delete().eq("id", data.userId);
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };
