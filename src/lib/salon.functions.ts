@@ -147,7 +147,12 @@ export const listAppointmentsFn = createServerFn({ method: "POST" })
       // admin/manager filters
       const f = data.filters ?? {};
       if (f.date) q = q.eq("appointment_date", f.date);
-      if (f.branch) q = q.eq("branch", f.branch);
+      // Managers are scoped to their own branch
+      if (u.role === "manager" && u.branch) {
+        q = q.eq("branch", u.branch);
+      } else if (f.branch) {
+        q = q.eq("branch", f.branch);
+      }
       if (f.staff) q = q.eq("staff_name", f.staff);
     }
 
@@ -194,7 +199,7 @@ export const addStaffFn = createServerFn({ method: "POST" })
 async function assertManagerOrAdmin(actorId: string) {
   const { data: u } = await supabaseAdmin
     .from("app_users")
-    .select("role")
+    .select("role, branch")
     .eq("id", actorId)
     .maybeSingle();
   if (!u || (u.role !== "admin" && u.role !== "manager")) return null;
@@ -214,11 +219,16 @@ export const listCredentialsFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const u = await assertManagerOrAdmin(data.actorId);
     if (!u) return { ok: false as const, error: "Unauthorized", users: [] };
-    const { data: rows, error } = await supabaseAdmin
+    let q = supabaseAdmin
       .from("app_users")
       .select("id, username, role, branch, staff_name, created_at")
       .order("role")
       .order("username");
+    // Managers only see logins in their own branch
+    if (u.role === "manager" && u.branch) {
+      q = q.eq("branch", u.branch);
+    }
+    const { data: rows, error } = await q;
     if (error) return { ok: false as const, error: error.message, users: [] };
     return { ok: true as const, users: rows ?? [] };
   });
@@ -245,16 +255,20 @@ export const createCredentialFn = createServerFn({ method: "POST" })
       .maybeSingle();
     if (existing) return { ok: false as const, error: `Username "${c.username}" already exists` };
 
-    // Managers have no branch; staff require a branch
-    if (c.role === "staff" && !c.branch) {
-      return { ok: false as const, error: "Branch is required for staff" };
+    // Managers can only create logins in their own branch
+    if (u.role === "manager" && u.branch && c.branch !== u.branch) {
+      return { ok: false as const, error: "Managers can only create logins for their own branch" };
+    }
+    // Both staff and manager require a branch
+    if (!c.branch) {
+      return { ok: false as const, error: "Branch is required" };
     }
 
     const { error } = await supabaseAdmin.from("app_users").insert({
       username: c.username,
       password_hash: sha256(c.password),
       role: c.role,
-      branch: c.role === "manager" ? null : c.branch,
+      branch: c.branch,
       staff_name: c.staff_name,
     });
     if (error) return { ok: false as const, error: error.message };
@@ -309,8 +323,12 @@ export const bulkCreateCredentialsFn = createServerFn({ method: "POST" })
     const u = await assertManagerOrAdmin(data.actorId);
     if (!u) return { ok: false as const, error: "Unauthorized", created: [], skipped: [] };
 
+    // Managers are restricted to their own branch
+    const effectiveBranch =
+      u.role === "manager" && u.branch ? u.branch : data.branch;
+
     let q = supabaseAdmin.from("staff").select("id, name, branch");
-    if (data.branch) q = q.eq("branch", data.branch);
+    if (effectiveBranch) q = q.eq("branch", effectiveBranch);
     const { data: staffRows, error: sErr } = await q;
     if (sErr) return { ok: false as const, error: sErr.message, created: [], skipped: [] };
 
@@ -402,11 +420,14 @@ export const resetCredentialPasswordFn = createServerFn({ method: "POST" })
     if (!u) return { ok: false as const, error: "Unauthorized" };
     const { data: target } = await supabaseAdmin
       .from("app_users")
-      .select("id, role, username")
+      .select("id, role, username, branch")
       .eq("id", data.userId)
       .maybeSingle();
     if (!target) return { ok: false as const, error: "User not found" };
     if (target.role === "admin") return { ok: false as const, error: "Cannot reset admin password here" };
+    if (u.role === "manager" && u.branch && target.branch !== u.branch) {
+      return { ok: false as const, error: "Out of your branch scope" };
+    }
 
     const password = data.newPassword || genPassword(10);
     const { error } = await supabaseAdmin
@@ -424,11 +445,14 @@ export const deleteCredentialFn = createServerFn({ method: "POST" })
     if (!u) return { ok: false as const, error: "Unauthorized" };
     const { data: target } = await supabaseAdmin
       .from("app_users")
-      .select("role")
+      .select("role, branch")
       .eq("id", data.userId)
       .maybeSingle();
     if (!target) return { ok: false as const, error: "User not found" };
     if (target.role === "admin") return { ok: false as const, error: "Cannot delete admin login" };
+    if (u.role === "manager" && u.branch && target.branch !== u.branch) {
+      return { ok: false as const, error: "Out of your branch scope" };
+    }
     const { error } = await supabaseAdmin.from("app_users").delete().eq("id", data.userId);
     if (error) return { ok: false as const, error: error.message };
     return { ok: true as const };

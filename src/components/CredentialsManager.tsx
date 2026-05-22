@@ -95,8 +95,8 @@ export function CredentialsManager({ session }: { session: Session }) {
       toast.error("Fill all fields");
       return;
     }
-    if (role === "staff" && !branch) {
-      toast.error("Choose a branch for staff");
+    if (!branch) {
+      toast.error("Choose a branch");
       return;
     }
     const res = await createFn({
@@ -106,7 +106,7 @@ export function CredentialsManager({ session }: { session: Session }) {
           username: username.trim().toLowerCase(),
           password,
           staff_name: staffName.trim(),
-          branch: role === "staff" ? (branch as Branch) : null,
+          branch: branch as Branch,
           role,
         },
       },
@@ -115,7 +115,7 @@ export function CredentialsManager({ session }: { session: Session }) {
     setResultTitle("Credential created");
     setResultCreds([{
       staff_name: staffName.trim(),
-      branch: role === "staff" ? (branch as string) : "Manager",
+      branch: branch as string,
       username: res.credential.username,
       password: res.credential.password,
     }]);
@@ -126,19 +126,23 @@ export function CredentialsManager({ session }: { session: Session }) {
   }
 
   async function onBulk() {
+    if (!bulkPassword || bulkPassword.length < 6) {
+      toast.error("Enter a password (min 6 characters)");
+      return;
+    }
     const res = await bulkFn({
       data: {
         actorId: session.id,
         branch: bulkBranch === "all" ? undefined : bulkBranch,
-        defaultPassword: bulkPassword || undefined,
+        defaultPassword: bulkPassword,
       },
     });
     if (!res.ok) { toast.error(res.error); return; }
-    const action = bulkPassword ? "synced" : "created";
-    setResultTitle(`Bulk: ${res.created.length} ${action}, ${res.skipped.length} skipped`);
+    setResultTitle(`Bulk: ${res.created.length} updated, ${res.skipped.length} skipped`);
     setResultCreds(res.created);
     setResultSkipped(res.skipped);
     setResultOpen(true);
+    setBulkPassword("");
     void load();
   }
 
@@ -206,17 +210,15 @@ export function CredentialsManager({ session }: { session: Session }) {
                 </SelectContent>
               </Select>
             </div>
-            {role === "staff" && (
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label>Branch</Label>
-                <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
-                  <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
-                  <SelectContent>
-                    {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Branch</Label>
+              <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
+                <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
+                <SelectContent>
+                  {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5 sm:col-span-1">
               <Label>Username</Label>
               <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="divya" />
@@ -234,10 +236,10 @@ export function CredentialsManager({ session }: { session: Session }) {
         {/* Bulk */}
         <Card className="p-6">
           <h3 className="font-display text-xl font-semibold flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary" /> Bulk create logins
+            <Users className="h-5 w-5 text-primary" /> Bulk update password
           </h3>
           <p className="text-sm text-muted-foreground mt-1">
-            Auto-generate logins for staff who don't have one yet. If you set a default password, it will also be applied to all existing staff logins in the selected scope — so the whole team shares the same password.
+            Set a single shared password for all existing staff logins in the selected scope. Staff who don't have a login yet will also get one created with this same password.
           </p>
           <div className="mt-4 grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -251,15 +253,15 @@ export function CredentialsManager({ session }: { session: Session }) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Default password (optional)</Label>
+              <Label>New password</Label>
               <Input
                 value={bulkPassword}
                 onChange={(e) => setBulkPassword(e.target.value)}
-                placeholder="Leave blank to auto-generate"
+                placeholder="min 6 characters"
               />
             </div>
             <Button onClick={onBulk} className="sm:col-span-2 bg-gradient-hero text-primary-foreground">
-              Generate logins
+              Update password
             </Button>
           </div>
         </Card>
