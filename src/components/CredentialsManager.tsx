@@ -106,7 +106,7 @@ export function CredentialsManager({ session }: { session: Session }) {
           username: username.trim().toLowerCase(),
           password,
           staff_name: staffName.trim(),
-          branch: role === "staff" ? (branch as Branch) : null,
+          branch: branch as Branch,
           role,
         },
       },
@@ -115,7 +115,7 @@ export function CredentialsManager({ session }: { session: Session }) {
     setResultTitle("Credential created");
     setResultCreds([{
       staff_name: staffName.trim(),
-      branch: role === "staff" ? (branch as string) : "Manager",
+      branch: branch as string,
       username: res.credential.username,
       password: res.credential.password,
     }]);
