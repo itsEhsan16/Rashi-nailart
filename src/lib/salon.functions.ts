@@ -147,7 +147,12 @@ export const listAppointmentsFn = createServerFn({ method: "POST" })
       // admin/manager filters
       const f = data.filters ?? {};
       if (f.date) q = q.eq("appointment_date", f.date);
-      if (f.branch) q = q.eq("branch", f.branch);
+      // Managers are scoped to their own branch
+      if (u.role === "manager" && u.branch) {
+        q = q.eq("branch", u.branch);
+      } else if (f.branch) {
+        q = q.eq("branch", f.branch);
+      }
       if (f.staff) q = q.eq("staff_name", f.staff);
     }
 
