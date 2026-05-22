@@ -420,11 +420,14 @@ export const resetCredentialPasswordFn = createServerFn({ method: "POST" })
     if (!u) return { ok: false as const, error: "Unauthorized" };
     const { data: target } = await supabaseAdmin
       .from("app_users")
-      .select("id, role, username")
+      .select("id, role, username, branch")
       .eq("id", data.userId)
       .maybeSingle();
     if (!target) return { ok: false as const, error: "User not found" };
     if (target.role === "admin") return { ok: false as const, error: "Cannot reset admin password here" };
+    if (u.role === "manager" && u.branch && target.branch !== u.branch) {
+      return { ok: false as const, error: "Out of your branch scope" };
+    }
 
     const password = data.newPassword || genPassword(10);
     const { error } = await supabaseAdmin
