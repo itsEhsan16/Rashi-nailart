@@ -255,16 +255,20 @@ export const createCredentialFn = createServerFn({ method: "POST" })
       .maybeSingle();
     if (existing) return { ok: false as const, error: `Username "${c.username}" already exists` };
 
-    // Managers have no branch; staff require a branch
-    if (c.role === "staff" && !c.branch) {
-      return { ok: false as const, error: "Branch is required for staff" };
+    // Managers can only create logins in their own branch
+    if (u.role === "manager" && u.branch && c.branch !== u.branch) {
+      return { ok: false as const, error: "Managers can only create logins for their own branch" };
+    }
+    // Both staff and manager require a branch
+    if (!c.branch) {
+      return { ok: false as const, error: "Branch is required" };
     }
 
     const { error } = await supabaseAdmin.from("app_users").insert({
       username: c.username,
       password_hash: sha256(c.password),
       role: c.role,
-      branch: c.role === "manager" ? null : c.branch,
+      branch: c.branch,
       staff_name: c.staff_name,
     });
     if (error) return { ok: false as const, error: error.message };
