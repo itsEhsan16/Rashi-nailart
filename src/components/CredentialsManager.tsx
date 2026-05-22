@@ -206,17 +206,15 @@ export function CredentialsManager({ session }: { session: Session }) {
                 </SelectContent>
               </Select>
             </div>
-            {role === "staff" && (
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label>Branch</Label>
-                <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
-                  <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
-                  <SelectContent>
-                    {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Branch</Label>
+              <Select value={branch} onValueChange={(v) => setBranch(v as Branch)}>
+                <SelectTrigger><SelectValue placeholder="Choose branch" /></SelectTrigger>
+                <SelectContent>
+                  {BRANCHES.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5 sm:col-span-1">
               <Label>Username</Label>
               <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} placeholder="divya" />
