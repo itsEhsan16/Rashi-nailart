@@ -323,8 +323,12 @@ export const bulkCreateCredentialsFn = createServerFn({ method: "POST" })
     const u = await assertManagerOrAdmin(data.actorId);
     if (!u) return { ok: false as const, error: "Unauthorized", created: [], skipped: [] };
 
+    // Managers are restricted to their own branch
+    const effectiveBranch =
+      u.role === "manager" && u.branch ? u.branch : data.branch;
+
     let q = supabaseAdmin.from("staff").select("id, name, branch");
-    if (data.branch) q = q.eq("branch", data.branch);
+    if (effectiveBranch) q = q.eq("branch", effectiveBranch);
     const { data: staffRows, error: sErr } = await q;
     if (sErr) return { ok: false as const, error: sErr.message, created: [], skipped: [] };
 
