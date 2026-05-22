@@ -95,8 +95,8 @@ export function CredentialsManager({ session }: { session: Session }) {
       toast.error("Fill all fields");
       return;
     }
-    if (role === "staff" && !branch) {
-      toast.error("Choose a branch for staff");
+    if (!branch) {
+      toast.error("Choose a branch");
       return;
     }
     const res = await createFn({
