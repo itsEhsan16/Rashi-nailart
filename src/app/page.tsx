@@ -4,14 +4,13 @@ import { Sparkles, Crown, MapPin, LogIn, Instagram, Facebook } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  BRANCHES,
-  SERVICES,
-  MEMBERSHIP_PRICE,
-  BOOKING_FEE,
-} from "@/lib/salon-data";
+import { BookingForm } from "@/components/booking/booking-form";
+import { getCatalog } from "@/lib/catalog";
+import { MEMBERSHIP_PRICE, BOOKING_FEE } from "@/lib/salon-data";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const { services, timeSlots, branches, staff } = await getCatalog();
+
   return (
     <div className="min-h-screen bg-gradient-soft">
       {/* Header */}
@@ -48,7 +47,7 @@ export default function HomePage() {
       <section className="mx-auto max-w-6xl px-6 pt-20 pb-10 text-center">
         <span className="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-1.5 text-xs font-medium text-accent-foreground">
           <span className="h-1.5 w-1.5 rounded-full bg-gold" />
-          {BRANCHES.join("  ·  ")}
+          {branches.map((b) => b.name).join("  ·  ")}
         </span>
         <h1 className="mt-6 font-display text-5xl md:text-6xl font-semibold tracking-tight">
           Book your <span className="text-primary">salon</span> moment
@@ -76,13 +75,18 @@ export default function HomePage() {
           <p className="mt-2 text-muted-foreground">Crafted by expert stylists, finished to perfection.</p>
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {SERVICES.map((s) => (
+          {services.map((s) => (
             <Card key={s.name} className="p-6 shadow-soft hover:shadow-elegant transition-shadow">
               <div className="h-10 w-10 rounded-full bg-primary/10 text-primary grid place-items-center mb-4">
                 <Sparkles className="h-5 w-5" />
               </div>
               <h3 className="font-display text-lg font-semibold">{s.name}</h3>
               <p className="mt-2 text-2xl font-semibold text-primary">₹{s.price}</p>
+              {s.isNailArt && (
+                <Badge variant="secondary" className="mt-3">
+                  <Crown className="h-3 w-3 mr-1" /> Member 50% off
+                </Badge>
+              )}
             </Card>
           ))}
         </div>
@@ -120,28 +124,36 @@ export default function HomePage() {
           <p className="mt-2 text-muted-foreground">Three studios across Mumbai.</p>
         </div>
         <div className="grid sm:grid-cols-3 gap-5">
-          {BRANCHES.map((b) => (
-            <Card key={b} className="p-6 shadow-soft">
+          {branches.map((b) => (
+            <Card key={b.name} className="p-6 shadow-soft">
               <div className="flex items-center gap-2 text-primary">
                 <MapPin className="h-5 w-5" />
-                <h3 className="font-display text-lg font-semibold text-foreground">{b}</h3>
+                <h3 className="font-display text-lg font-semibold text-foreground">{b.name}</h3>
               </div>
-              <p className="mt-2 text-sm text-muted-foreground">Mumbai, Maharashtra</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {b.address ?? "Mumbai, Maharashtra"}
+              </p>
               <Badge variant="secondary" className="mt-4">Open today</Badge>
             </Card>
           ))}
         </div>
       </section>
 
-      {/* Booking placeholder — replaced by the live booking form in Phase 4 */}
+      {/* Booking */}
       <section id="book" className="mx-auto max-w-3xl px-6 pb-24 scroll-mt-20">
-        <Card className="p-10 text-center shadow-elegant border-border/60">
-          <h2 className="font-display text-2xl font-semibold">Book your appointment</h2>
+        <div className="text-center mb-8">
+          <h2 className="font-display text-3xl md:text-4xl font-semibold">Book your appointment</h2>
           <p className="mt-2 text-muted-foreground">
-            The full booking experience with live availability and secure ₹{BOOKING_FEE} payment
-            is being wired up next.
+            Pick a branch, stylist, date &amp; service — confirm with a ₹{BOOKING_FEE} fee.
           </p>
-        </Card>
+        </div>
+        <BookingForm
+          services={services}
+          timeSlots={timeSlots}
+          branches={branches}
+          staff={staff}
+          bookingFee={BOOKING_FEE}
+        />
       </section>
 
       {/* Footer */}
