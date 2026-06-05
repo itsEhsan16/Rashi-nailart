@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BookingForm } from "@/components/booking/booking-form";
+import { MembershipDialog } from "@/components/booking/membership-dialog";
 import { getCatalog } from "@/lib/catalog";
 import { MEMBERSHIP_PRICE, BOOKING_FEE } from "@/lib/salon-data";
 
@@ -111,9 +112,7 @@ export default async function HomePage() {
               </p>
             </div>
           </div>
-          <Button asChild className="bg-gradient-hero text-primary-foreground shadow-soft h-11 px-5">
-            <a href="#book">Buy membership · ₹{MEMBERSHIP_PRICE}</a>
-          </Button>
+          <MembershipDialog price={MEMBERSHIP_PRICE} />
         </Card>
       </section>
 
