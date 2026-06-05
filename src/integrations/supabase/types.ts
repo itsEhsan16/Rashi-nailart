@@ -106,6 +106,7 @@ export type Database = {
       }
       memberships: {
         Row: {
+          activation_date: string | null
           active: boolean
           amount_paid: number
           client_name: string
@@ -116,6 +117,7 @@ export type Database = {
           start_date: string
         }
         Insert: {
+          activation_date?: string | null
           active?: boolean
           amount_paid?: number
           client_name: string
@@ -126,6 +128,7 @@ export type Database = {
           start_date?: string
         }
         Update: {
+          activation_date?: string | null
           active?: boolean
           amount_paid?: number
           client_name?: string
@@ -195,6 +198,129 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      branches: {
+        Row: {
+          active: boolean
+          address: string | null
+          created_at: string
+          id: string
+          map_url: string | null
+          name: Database["public"]["Enums"]["branch"]
+          phone: string | null
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          address?: string | null
+          created_at?: string
+          id?: string
+          map_url?: string | null
+          name: Database["public"]["Enums"]["branch"]
+          phone?: string | null
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          address?: string | null
+          created_at?: string
+          id?: string
+          map_url?: string | null
+          name?: Database["public"]["Enums"]["branch"]
+          phone?: string | null
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          branch: Database["public"]["Enums"]["branch"] | null
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+          role: Database["public"]["Enums"]["user_role"]
+          staff_name: string | null
+          updated_at: string
+        }
+        Insert: {
+          branch?: Database["public"]["Enums"]["branch"] | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+          role?: Database["public"]["Enums"]["user_role"]
+          staff_name?: string | null
+          updated_at?: string
+        }
+        Update: {
+          branch?: Database["public"]["Enums"]["branch"] | null
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          staff_name?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      services: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          is_nail_art: boolean
+          name: string
+          price: number
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_nail_art?: boolean
+          name: string
+          price: number
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_nail_art?: boolean
+          name?: string
+          price?: number
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      time_slots: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          label: string
+          sort_order: number
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label: string
+          sort_order?: number
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label?: string
+          sort_order?: number
+        }
+        Relationships: []
       }
       staff: {
         Row: {
