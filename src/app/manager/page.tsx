@@ -1,12 +1,13 @@
-export default function ManagerPage() {
+import { getCurrentProfile } from "@/lib/auth";
+import { DashboardTabs } from "@/components/admin/dashboard-tabs";
+
+export default async function ManagerPage() {
+  const profile = await getCurrentProfile();
   return (
     <div>
-      <h1 className="font-display text-3xl md:text-4xl font-semibold mb-2">
-        Manager Dashboard
-      </h1>
-      <p className="text-muted-foreground">
-        Branch-scoped bookings and staff credential management are wired up in Phase 6.
-      </p>
+      <h1 className="font-display text-3xl md:text-4xl font-semibold mb-1">Manager Dashboard</h1>
+      <p className="text-muted-foreground mb-6">{profile?.branch ?? "Your branch"}</p>
+      <DashboardTabs role="manager" branch={profile?.branch ?? null} />
     </div>
   );
 }
