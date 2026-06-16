@@ -1,8 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { format } from "date-fns";
-import { CalendarIcon, X, Trash2, CheckCircle2, Ban, Download, Crown } from "lucide-react";
+import {
+  CalendarIcon,
+  X,
+  Trash2,
+  CheckCircle2,
+  Ban,
+  Download,
+  Crown,
+  ImageIcon,
+  Clock,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,6 +32,13 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -36,10 +55,46 @@ import {
   completeBooking,
   cancelBooking,
   deleteBooking,
+  getProofUrl,
   type BookingRow,
 } from "@/lib/actions/admin";
 
-type StatusFilter = "all" | "pending" | "paid" | "cancelled" | "completed";
+type StatusFilter =
+  | "all"
+  | "pending_payment"
+  | "payment_uploaded"
+  | "verified"
+  | "rejected"
+  | "cancelled"
+  | "completed";
+
+function StatusBadge({ row }: { row: BookingRow }) {
+  if (row.completed) {
+    return (
+      <Badge className="bg-emerald-600 text-white gap-1">
+        <CheckCircle2 className="h-3 w-3" /> Completed
+      </Badge>
+    );
+  }
+  switch (row.payment_status) {
+    case "verified":
+      return <Badge className="bg-emerald-600 text-white">Confirmed</Badge>;
+    case "payment_uploaded":
+      return (
+        <Badge className="bg-amber-500 text-white gap-1">
+          <Clock className="h-3 w-3" /> Awaiting verification
+        </Badge>
+      );
+    case "pending_payment":
+      return <Badge variant="outline">Awaiting payment</Badge>;
+    case "rejected":
+      return <Badge variant="destructive">Rejected</Badge>;
+    case "cancelled":
+      return <Badge variant="destructive">Cancelled</Badge>;
+    default:
+      return <Badge variant="outline">{row.payment_status}</Badge>;
+  }
+}
 
 export function BookingsPanel({ role }: { role: UserRole }) {
   const canFilter = role !== "staff";
@@ -52,6 +107,10 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   const [branch, setBranch] = useState<string>("");
   const [staff, setStaff] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
+
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
+  const [proofFor, setProofFor] = useState<BookingRow | null>(null);
+  const [proofLoading, setProofLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -93,6 +152,19 @@ export function BookingsPanel({ role }: { role: UserRole }) {
     toast.success("Booking deleted");
     void load();
   }
+  async function viewProof(row: BookingRow) {
+    setProofFor(row);
+    setProofUrl(null);
+    setProofLoading(true);
+    const res = await getProofUrl({ kind: "booking", id: row.id });
+    setProofLoading(false);
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not open screenshot");
+      setProofFor(null);
+      return;
+    }
+    setProofUrl(res.url);
+  }
 
   function exportCsv() {
     downloadCsv(
@@ -114,7 +186,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
     );
   }
 
-  const colSpan = 10;
+  const colSpan = 11;
 
   return (
     <div className="space-y-4">
@@ -164,9 +236,11 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="paid">Paid</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="payment_uploaded">Awaiting verification</SelectItem>
+                  <SelectItem value="verified">Confirmed</SelectItem>
+                  <SelectItem value="pending_payment">Awaiting payment</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
@@ -216,6 +290,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                 <TableHead>Service</TableHead>
                 <TableHead>Staff</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Proof</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -233,7 +308,9 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                   key={r.id}
                   className={cn(
                     r.is_member && "bg-primary/5",
-                    r.payment_status === "pending" && "opacity-60",
+                    r.payment_status === "pending_payment" && "opacity-60",
+                    (r.payment_status === "rejected" || r.payment_status === "cancelled") &&
+                      "opacity-50",
                     r.completed && "bg-emerald-500/5",
                   )}
                 >
@@ -263,39 +340,43 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                     </div>
                   </TableCell>
                   <TableCell>{r.staff_name}</TableCell>
+                  <TableCell><StatusBadge row={r} /></TableCell>
                   <TableCell>
-                    {r.completed ? (
-                      <Badge className="bg-emerald-600 text-white gap-1">
-                        <CheckCircle2 className="h-3 w-3" /> Completed
-                      </Badge>
-                    ) : r.payment_status === "paid" ? (
-                      <Badge className="bg-emerald-600 text-white">Paid</Badge>
-                    ) : r.payment_status === "cancelled" ? (
-                      <Badge variant="destructive">Cancelled</Badge>
+                    {r.upi_screenshot_url ? (
+                      <Button size="sm" variant="outline" onClick={() => viewProof(r)}>
+                        <ImageIcon className="mr-1 h-4 w-4" /> View
+                      </Button>
                     ) : (
-                      <Badge variant="outline">Pending</Badge>
+                      <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
                   <TableCell className="max-w-[200px] text-sm text-muted-foreground truncate">
-                    {r.special_requests || "—"}
+                    {r.rejection_reason ? (
+                      <span className="text-destructive">{r.rejection_reason}</span>
+                    ) : (
+                      r.special_requests || "—"
+                    )}
                   </TableCell>
                   <TableCell className="text-right space-x-1 whitespace-nowrap">
-                    {!r.completed && r.payment_status !== "cancelled" && (
+                    {!r.completed && r.payment_status === "verified" && (
                       <Button size="sm" variant="outline" onClick={() => onComplete(r.id)}>
                         <CheckCircle2 className="h-4 w-4 mr-1" /> Done
                       </Button>
                     )}
-                    {canManage && r.payment_status !== "cancelled" && !r.completed && (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        title="Cancel"
-                        onClick={() => onCancel(r.id)}
-                      >
-                        <Ban className="h-4 w-4" />
-                      </Button>
-                    )}
+                    {canManage &&
+                      !r.completed &&
+                      (r.payment_status === "verified" ||
+                        r.payment_status === "payment_uploaded") && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          title="Cancel"
+                          onClick={() => onCancel(r.id)}
+                        >
+                          <Ban className="h-4 w-4" />
+                        </Button>
+                      )}
                     {canManage && (
                       <Button
                         size="icon"
@@ -315,6 +396,35 @@ export function BookingsPanel({ role }: { role: UserRole }) {
           </Table>
         </div>
       </Card>
+
+      <Dialog open={!!proofFor} onOpenChange={(o) => !o && setProofFor(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Payment proof — {proofFor?.client_name}</DialogTitle>
+            <DialogDescription>
+              ₹{proofFor?.amount} · {proofFor?.phone}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-[200px] grid place-items-center">
+            {proofLoading ? (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            ) : proofUrl ? (
+              <a href={proofUrl} target="_blank" rel="noopener noreferrer">
+                <Image
+                  src={proofUrl}
+                  alt="Payment screenshot"
+                  width={400}
+                  height={600}
+                  className="max-h-[60vh] w-auto rounded-md border border-border/60"
+                  unoptimized
+                />
+              </a>
+            ) : (
+              <p className="text-sm text-muted-foreground">No screenshot.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

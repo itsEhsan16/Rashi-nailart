@@ -2,11 +2,17 @@
 
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createRazorpayOrder, getRazorpayKeyId } from "@/lib/razorpay/server";
-import { BOOKING_FEE, SERVICES } from "@/lib/salon-data";
+import {
+  BOOKING_FEE,
+  PENDING_HOLD_MINUTES,
+  SERVICES,
+  SLOT_HOLDING_STATUSES,
+} from "@/lib/salon-data";
+import { uploadProof, validateProofFile } from "@/lib/payment-proofs";
 import {
   BRANCHES_TUPLE,
   createBookingInputSchema,
+  uploadProofSchema,
   type CreateBookingInput,
 } from "@/lib/validations/booking";
 
@@ -60,7 +66,7 @@ export async function getBookedSlots(input: z.infer<typeof slotsInputSchema>) {
     .eq("branch", parsed.data.branch)
     .eq("staff_name", parsed.data.staff_name)
     .eq("appointment_date", parsed.data.appointment_date)
-    .neq("payment_status", "cancelled");
+    .in("payment_status", SLOT_HOLDING_STATUSES as unknown as string[]);
   const rows = (data as { time_slot: string }[] | null) ?? [];
   return { slots: Array.from(new Set(rows.map((r) => r.time_slot))) };
 }
@@ -84,12 +90,16 @@ async function resolveService(
 }
 
 /**
- * Reserve the slot, then create a ₹50 Razorpay order. The appointment is held in
- * `pending` (the unique index blocks concurrent bookings of the same slot); it is
- * only confirmed once payment is verified server-side. Member nail-art bookings
- * get the 50% discount on the service (charged in-store), priced authoritatively.
+ * Reserve the slot immediately as `pending_payment`. The unique index blocks
+ * concurrent bookings of the same slot. The booking is only finalized once an
+ * admin verifies the uploaded UPI screenshot. Member nail-art bookings get the
+ * 50% discount on the service (charged in-store), priced authoritatively.
+ *
+ * Returns the appointment id (the customer's capability token for uploading
+ * their proof), the booking fee, and the live UPI settings to render the
+ * payment screen.
  */
-export async function createBookingOrder(input: CreateBookingInput) {
+export async function createBooking(input: CreateBookingInput) {
   const parsed = createBookingInputSchema.safeParse(input);
   if (!parsed.success) {
     return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid booking details" };
@@ -104,8 +114,9 @@ export async function createBookingOrder(input: CreateBookingInput) {
   const discount = isMember && svc.isNailArt ? Math.round(svc.price * 0.5) : 0;
   const finalServicePrice = svc.price - discount;
 
-  // Release abandoned holds for this exact slot (unpaid, older than 15 minutes).
-  const staleCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  // Reclaim abandoned holds for this exact slot (never uploaded a proof, older
+  // than the hold window). payment_uploaded/verified holds are never reclaimed.
+  const staleCutoff = new Date(Date.now() - PENDING_HOLD_MINUTES * 60 * 1000).toISOString();
   await admin
     .from("appointments")
     .delete()
@@ -113,7 +124,7 @@ export async function createBookingOrder(input: CreateBookingInput) {
     .eq("staff_name", d.staff_name)
     .eq("appointment_date", d.appointment_date)
     .eq("time_slot", d.time_slot)
-    .eq("payment_status", "pending")
+    .eq("payment_status", "pending_payment")
     .lt("created_at", staleCutoff);
 
   // Reserve the slot. uq_appointment_slot guarantees one non-cancelled booking.
@@ -127,9 +138,10 @@ export async function createBookingOrder(input: CreateBookingInput) {
       time_slot: d.time_slot,
       service: d.service,
       price: finalServicePrice,
+      amount: BOOKING_FEE,
       staff_name: d.staff_name,
       special_requests: d.special_requests ?? null,
-      payment_status: "pending",
+      payment_status: "pending_payment",
       is_member: isMember,
       discount_applied: discount,
     })
@@ -147,51 +159,82 @@ export async function createBookingOrder(input: CreateBookingInput) {
   }
   const appt = apptData as { id: string };
 
-  try {
-    const order = await createRazorpayOrder(BOOKING_FEE, {
-      purpose: "booking",
-      phone: d.phone,
-      client_name: d.client_name,
-    });
-    await admin.from("appointments").update({ razorpay_order_id: order.id }).eq("id", appt.id);
-
-    const { data: payData } = await admin
-      .from("payments")
-      .insert({
-        purpose: "booking",
-        amount: BOOKING_FEE,
-        currency: "INR",
-        status: "created",
-        razorpay_order_id: order.id,
-        client_name: d.client_name,
-        phone: d.phone,
-        appointment_id: appt.id,
-      })
-      .select("id")
-      .single();
-    const pay = payData as { id: string } | null;
-
-    return {
-      ok: true as const,
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      keyId: getRazorpayKeyId(),
-      paymentId: pay?.id ?? null,
-      appointmentId: appt.id,
-      isMember,
-      discount,
-      finalServicePrice,
-    };
-  } catch (e) {
-    // Release the held slot if we couldn't start payment.
-    await admin.from("appointments").delete().eq("id", appt.id);
-    const msg = e instanceof Error ? e.message : "Could not start payment";
-    return { ok: false as const, error: msg };
-  }
+  const settings = await getPaymentSettings();
+  return {
+    ok: true as const,
+    appointmentId: appt.id,
+    amount: BOOKING_FEE,
+    isMember,
+    discount,
+    finalServicePrice,
+    settings,
+  };
 }
 
-/** Free a still-pending hold immediately (e.g. the customer dismissed checkout). */
+/** Public UPI payment details for the payment screen (admin-editable). */
+export type PaymentSettings = {
+  upiId: string;
+  payeeName: string;
+  qrUrl: string;
+};
+
+export async function getPaymentSettings(): Promise<PaymentSettings> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("app_settings")
+    .select("upi_id, payee_name, upi_qr_url")
+    .eq("id", "default")
+    .maybeSingle();
+  const row = data as { upi_id: string; payee_name: string; upi_qr_url: string } | null;
+  return {
+    upiId: row?.upi_id ?? "",
+    payeeName: row?.payee_name ?? "Rashi Nail Art Studio",
+    qrUrl: row?.upi_qr_url || "/upi-qr.svg",
+  };
+}
+
+/**
+ * Customer uploads their UPI payment screenshot for a held booking. The
+ * unguessable appointment id (returned only to the booker) is the capability;
+ * the booking must still be awaiting payment. Validates the image server-side,
+ * stores it in the private bucket, and flips the booking to `payment_uploaded`.
+ */
+export async function uploadBookingProof(formData: FormData) {
+  const parsed = uploadProofSchema.safeParse({ id: formData.get("appointmentId") });
+  if (!parsed.success) return { ok: false as const, error: "Invalid booking reference." };
+
+  const valid = validateProofFile(formData.get("screenshot"));
+  if (!valid.ok) return { ok: false as const, error: valid.error };
+
+  const admin = createAdminClient();
+  const { data: apptData } = await admin
+    .from("appointments")
+    .select("id, payment_status")
+    .eq("id", parsed.data.id)
+    .maybeSingle();
+  const appt = apptData as { id: string; payment_status: string } | null;
+  if (!appt) return { ok: false as const, error: "Booking not found. Please start again." };
+  if (appt.payment_status !== "pending_payment" && appt.payment_status !== "payment_uploaded") {
+    return { ok: false as const, error: "This booking can no longer accept a payment proof." };
+  }
+
+  const uploaded = await uploadProof(admin, "bookings", appt.id, valid.file);
+  if (!uploaded.ok) return { ok: false as const, error: uploaded.error };
+
+  const { error } = await admin
+    .from("appointments")
+    .update({
+      upi_screenshot_url: uploaded.path,
+      uploaded_at: new Date().toISOString(),
+      payment_status: "payment_uploaded",
+    })
+    .eq("id", appt.id);
+  if (error) return { ok: false as const, error: error.message };
+
+  return { ok: true as const };
+}
+
+/** Free a still-pending hold immediately (e.g. the customer abandoned payment). */
 export async function cancelPendingBooking(input: { appointmentId: string }) {
   const parsed = z.object({ appointmentId: z.string().uuid() }).safeParse(input);
   if (!parsed.success) return { ok: false as const };
@@ -200,6 +243,6 @@ export async function cancelPendingBooking(input: { appointmentId: string }) {
     .from("appointments")
     .delete()
     .eq("id", parsed.data.appointmentId)
-    .eq("payment_status", "pending");
+    .eq("payment_status", "pending_payment");
   return { ok: true as const };
 }

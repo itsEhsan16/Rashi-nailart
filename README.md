@@ -1,6 +1,6 @@
 # Rashi Nail Art Studio
 
-A production-ready salon appointment-booking platform — **Next.js 14+ (App Router)**, **TypeScript (strict)**, **Tailwind v4 + shadcn/ui**, **Supabase** (Auth, Postgres, RLS) and **Razorpay** payments. Migrated from the original TanStack Start app (see [`MIGRATION_PLAN.md`](./MIGRATION_PLAN.md)).
+A production-ready salon appointment-booking platform — **Next.js 14+ (App Router)**, **TypeScript (strict)**, **Tailwind v4 + shadcn/ui**, **Supabase** (Auth, Postgres, RLS, Storage) with **manual UPI + screenshot-verified** payments. Migrated from the original TanStack Start app (see [`MIGRATION_PLAN.md`](./MIGRATION_PLAN.md)).
 
 Branches: **Vile Parle · Bandra · Kandivali** (Mumbai).
 
@@ -11,12 +11,12 @@ Branches: **Vile Parle · Bandra · Kandivali** (Mumbai).
 **Customers (no account needed — guest/phone-based)**
 - Marketing landing page (hero, services, gallery, membership, branches, testimonials, FAQ) with subtle motion and SEO/JSON-LD.
 - Smart booking form (react-hook-form + zod): cascading **branch → stylist → date → time-slot** with **live availability** (booked slots disabled, no double-booking).
-- **₹50 booking fee** via Razorpay — the slot is only confirmed after **server-side signature verification**.
-- **₹100 one-year membership** → **50% off nail-art services**. Benefits **activate 10 days** after purchase; members are auto-detected by phone and the discount is applied automatically.
+- **₹50 booking fee** paid over **manual UPI**: the slot is held immediately, the customer pays via QR / UPI ID and uploads a payment screenshot, and an **admin verifies it by hand** before the booking is confirmed. Form details survive a refresh.
+- **₹100 one-year membership** → **50% off nail-art services** (same UPI + verification flow). Benefits **activate 10 days** after the payment is verified; members are auto-detected by phone and the discount is applied automatically.
 
 **Staff / Manager / Admin (Supabase Auth)**
-- **Admin**: revenue analytics (recharts), bookings table (filter by date/branch/staff/status, complete/cancel/delete, **CSV export**), members list (activation/expiry), manage **services, time slots, branches, stylists**, and **team logins**.
-- **Manager**: branch-scoped bookings, members, stylists and team.
+- **Admin**: a **Payments / Verification** queue (verify or reject uploaded UPI proofs, view full-size screenshots via signed URLs), revenue analytics (recharts, counts **only verified** bookings/memberships + a **Pending verification** stat), bookings table (filter by date/branch/staff/status, complete/cancel/delete, **CSV export**), members list (activation/expiry), a **Settings** tab to edit the **UPI ID / payee / QR** live, manage **services, time slots, branches, stylists**, and **team logins**.
+- **Manager**: branch-scoped bookings with **payment status + screenshot view (view-only)**, members, stylists and team.
 - **Staff**: their own appointments + “mark complete”.
 - Routes protected by middleware; fine-grained role checks in each dashboard layout; **RLS on every table**.
 
@@ -30,7 +30,7 @@ Branches: **Vile Parle · Bandra · Kandivali** (Mumbai).
 | Language | TypeScript (`strict`, no `any`) |
 | Styling | Tailwind v4 (`@tailwindcss/postcss`) + shadcn/ui |
 | Data/Auth | Supabase (`@supabase/ssr`) — Postgres, RLS, Auth |
-| Payments | Razorpay (REST orders + HMAC verification + webhook) |
+| Payments | Manual UPI + screenshot upload → admin verification (Supabase Storage, signed URLs) |
 | Forms | react-hook-form + zod |
 | Charts | recharts · Motion: framer-motion |
 | Deploy | Vercel |
@@ -63,11 +63,10 @@ Copy `.env.example` → `.env.local` and fill these in. **Never commit `.env.loc
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | Supabase anon/publishable key |
 | `SUPABASE_URL` | server | Same project URL (server-side) |
-| `SUPABASE_SERVICE_ROLE_KEY` | **server, secret** | Service-role key — used by server actions/webhook for trusted writes. Bypasses RLS. |
-| `RAZORPAY_KEY_ID` | server | Razorpay key id (also returned to the client to open checkout) |
-| `RAZORPAY_KEY_SECRET` | **server, secret** | Razorpay key secret — signs/verifies payments |
-| `RAZORPAY_WEBHOOK_SECRET` | **server, secret** | Secret set when creating the Razorpay webhook |
+| `SUPABASE_SERVICE_ROLE_KEY` | **server, secret** | Service-role key — used by server actions for trusted writes + proof storage. Bypasses RLS. |
 | `NEXT_PUBLIC_SITE_URL` | public | Public base URL (SEO/canonical) |
+
+> 💡 There are **no payment-gateway secrets**. The UPI ID, payee name and QR image live in the `app_settings` table and are edited in **Admin → Settings**.
 
 > ⚠️ **Rotate the old anon key.** The original project committed an anon key to git history. Generate a fresh one in Supabase → Project Settings → API and update `.env.local` / Vercel.
 
@@ -75,11 +74,12 @@ Copy `.env.example` → `.env.local` and fill these in. **Never commit `.env.loc
 
 ## 🗄️ Supabase setup
 
-The app reuses the existing project. Three new migrations live in [`supabase/migrations/`](./supabase/migrations):
+The app reuses the existing project. Migrations live in [`supabase/migrations/`](./supabase/migrations):
 
 1. `…_auth_supabase_profiles.sql` — `profiles` table (1:1 with `auth.users`), role helpers (`my_role`, `is_admin`, …), a trigger that creates a profile from auth metadata, and profile RLS.
 2. `…_management_tables_activation_guard.sql` — `services`, `time_slots`, `branches` (seeded), `memberships.activation_date` (purchase + 10 days), and the `uq_appointment_slot` unique index that guarantees **one non-cancelled booking per slot**.
 3. `…_rls_policies.sql` — Row Level Security for every table.
+4. `…_manual_upi_verification.sql` — the manual-UPI flow: new `payment_status` enum (`pending_payment → payment_uploaded → verified / rejected`, + `cancelled`), proof/verification columns on `appointments` and `payments`, the `app_settings` table (UPI ID / payee / QR), the private **`payment-proofs`** storage bucket + policies, and a rebuilt `uq_appointment_slot` that frees `rejected`/`cancelled` slots. Drops the old Razorpay columns.
 
 ### Apply the migrations
 
@@ -115,12 +115,23 @@ supabase gen types typescript --project-id <ref> > src/integrations/supabase/typ
 
 ---
 
-## 💳 Razorpay setup
+## 💳 Manual UPI payments + verification
 
-1. Get **Key ID** and **Key Secret** (use **test** keys in dev) → set `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET`.
-2. Create a **webhook** pointing to `https://<your-domain>/api/webhooks/razorpay`, subscribe to `payment.captured`, `order.paid`, `payment.failed`, set a secret → put it in `RAZORPAY_WEBHOOK_SECRET`.
+No payment gateway. The flow:
 
-Payment flow: client opens checkout → on success the server **verifies the HMAC signature** (`/lib/actions/payments.ts`) and fulfils the order; the **webhook** is the source of truth and is idempotent. The client is never trusted.
+1. **Customer books** → the slot is held immediately as `pending_payment` (the booking row stores all form data, no details lost on refresh — they're mirrored to `sessionStorage`).
+2. A **payment screen** shows the studio's **QR code** + **UPI ID** (with a copy button) + the exact **amount** and instructions. The customer pays in any UPI app and **uploads a screenshot** (validated client- and server-side: image only, ≤ 5 MB).
+3. The screenshot is uploaded — via a **service-role server action** — to the private **`payment-proofs`** bucket, and the booking flips to `payment_uploaded` (awaiting verification). The slot stays held.
+4. **Admin → Payments** lists everything awaiting verification (newest first) with client/branch/date/slot/service/amount and the screenshot (signed URL, full-size). Admin **Verifies** (→ `verified`, slot finalized, `notifyCustomer()` stub fired) or **Rejects** with a reason (→ `rejected`, slot released).
+5. Memberships use the same flow; on verify the membership is created with the **10-day activation** rule.
+
+**Slot hold rule:** `pending_payment`, `payment_uploaded` and `verified` all hold a slot; `rejected`/`cancelled` free it. An abandoned `pending_payment` (never uploaded a proof, older than 30 min) is reclaimed when someone else books that exact slot.
+
+**Configuring UPI:** set the **UPI ID / payee name / QR image** in **Admin → Settings** (stored in `app_settings`, no redeploy). The placeholder QR is [`public/upi-qr.svg`](./public/upi-qr.svg) — replace it (e.g. with `/upi-qr.png`) or point the setting at a full URL.
+
+**Security:** customers are anonymous, so uploads and reads go through service-role server actions and the bucket has **no public/anon policy** — proofs can't be listed or fetched directly; admin/manager view them via short-lived signed URLs. The unguessable appointment/payment UUID is the customer's upload capability.
+
+**Notifications** are a stub: [`src/lib/notify.ts`](./src/lib/notify.ts) `notifyCustomer()` logs intent — wire a real SMS/WhatsApp provider where marked `TODO(notify)`.
 
 ---
 
@@ -128,9 +139,7 @@ Payment flow: client opens checkout → on success the server **verifies the HMA
 
 1. Push the branch and import the repo in Vercel (Next.js is auto-detected — no `vercel.json` needed).
 2. Add **all** environment variables (above) in Project → Settings → Environment Variables.
-3. Deploy. Then set the Razorpay webhook URL to `https://<your-vercel-domain>/api/webhooks/razorpay` and set `NEXT_PUBLIC_SITE_URL` to your domain.
-
-The webhook route runs on the Node.js runtime (raw-body HMAC); everything else uses the default runtimes.
+3. Apply the migrations (incl. the `payment-proofs` bucket), set `NEXT_PUBLIC_SITE_URL` to your domain, then set your real UPI ID / QR in **Admin → Settings**.
 
 ---
 
@@ -138,7 +147,7 @@ The webhook route runs on the Node.js runtime (raw-body HMAC); everything else u
 
 - Roles: **`admin` · `manager` · `staff`** (in `profiles.role`). Customers are **not** users — bookings are guest/phone-based.
 - Reads of public catalogs (services/time-slots/branches/staff) are open to `anon` for the booking form; **appointments/memberships/payments are restricted** to internal roles and scoped by branch.
-- Privileged writes (create booking + payment, verify, membership, team) run through **service-role server actions** that first verify the caller’s role server-side; RLS is defense-in-depth.
+- Privileged writes (create booking, upload proof, verify/reject, membership, team) run through **service-role server actions** that first verify the caller’s role server-side; RLS is defense-in-depth. The `payment-proofs` bucket is private — only admin/manager read it, via signed URLs.
 
 ---
 
@@ -146,18 +155,17 @@ The webhook route runs on the Node.js runtime (raw-body HMAC); everything else u
 
 ```
 src/
-  app/                  # App Router: landing (/), /login, /admin, /manager, /staff, /api/webhooks/razorpay
+  app/                  # App Router: landing (/), /login, /admin, /manager, /staff
   components/
     ui/                 # shadcn/ui
-    booking/            # booking form + membership dialog
-    admin/              # dashboard panels (overview, bookings, members, manage, team, staff)
+    booking/            # booking form + membership dialog + payment screen (QR/UPI/upload)
+    admin/              # dashboard panels (overview, payments, bookings, members, manage, settings, team, staff)
     landing/            # reveal (motion), faq
   lib/
     supabase/           # browser / server / admin clients + middleware
-    actions/            # server actions: auth, booking, payments, membership, admin
-    razorpay/           # server-only Razorpay helpers
+    actions/            # server actions: auth, booking, membership, admin
     validations/        # zod schemas
-    auth.ts catalog.ts payments-core.ts salon-data.ts export-csv.ts utils.ts
+    auth.ts catalog.ts payment-proofs.ts payments-core.ts notify.ts salon-data.ts export-csv.ts utils.ts
   integrations/supabase/types.ts
 supabase/migrations/    # SQL (apply via CLI/dashboard)
 scripts/seed-admin.mjs  # create the first internal user
@@ -170,4 +178,4 @@ middleware.ts           # session refresh + route protection
 
 - `npm run build` is clean (TypeScript strict + ESLint).
 - This is a migration from TanStack Start → Next.js; the original server logic is preserved for reference in `.migration-reference/` (gitignored).
-- Two behavioural improvements over the original: the ₹50 fee now actually gates booking confirmation (was a free insert), and the 10-day membership activation is now enforced. Slot capacity is a hard **1 per slot** (the old peak-season “capacity 2” was dropped).
+- Payments are **manual UPI + admin-verified screenshot** (the earlier Razorpay gateway was removed). The ₹50 fee gates booking confirmation and the 10-day membership activation is enforced after verification. Slot capacity is a hard **1 per slot** (the old peak-season “capacity 2” was dropped).

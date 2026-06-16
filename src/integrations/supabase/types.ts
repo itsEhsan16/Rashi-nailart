@@ -46,6 +46,7 @@ export type Database = {
       }
       appointments: {
         Row: {
+          amount: number
           appointment_date: string
           branch: Database["public"]["Enums"]["branch"]
           client_name: string
@@ -58,13 +59,18 @@ export type Database = {
           payment_status: string
           phone: string
           price: number
-          razorpay_order_id: string | null
+          rejection_reason: string | null
           service: string
           special_requests: string | null
           staff_name: string
           time_slot: string
+          upi_screenshot_url: string | null
+          uploaded_at: string | null
+          verified_at: string | null
+          verified_by: string | null
         }
         Insert: {
+          amount?: number
           appointment_date: string
           branch: Database["public"]["Enums"]["branch"]
           client_name: string
@@ -77,13 +83,18 @@ export type Database = {
           payment_status?: string
           phone: string
           price: number
-          razorpay_order_id?: string | null
+          rejection_reason?: string | null
           service: string
           special_requests?: string | null
           staff_name: string
           time_slot: string
+          upi_screenshot_url?: string | null
+          uploaded_at?: string | null
+          verified_at?: string | null
+          verified_by?: string | null
         }
         Update: {
+          amount?: number
           appointment_date?: string
           branch?: Database["public"]["Enums"]["branch"]
           client_name?: string
@@ -96,11 +107,39 @@ export type Database = {
           payment_status?: string
           phone?: string
           price?: number
-          razorpay_order_id?: string | null
+          rejection_reason?: string | null
           service?: string
           special_requests?: string | null
           staff_name?: string
           time_slot?: string
+          upi_screenshot_url?: string | null
+          uploaded_at?: string | null
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: []
+      }
+      app_settings: {
+        Row: {
+          id: string
+          payee_name: string
+          updated_at: string
+          upi_id: string
+          upi_qr_url: string
+        }
+        Insert: {
+          id?: string
+          payee_name?: string
+          updated_at?: string
+          upi_id?: string
+          upi_qr_url?: string
+        }
+        Update: {
+          id?: string
+          payee_name?: string
+          updated_at?: string
+          upi_id?: string
+          upi_qr_url?: string
         }
         Relationships: []
       }
@@ -152,10 +191,13 @@ export type Database = {
           metadata: Json | null
           phone: string | null
           purpose: string
-          razorpay_order_id: string | null
-          razorpay_payment_id: string | null
+          rejection_reason: string | null
           status: string
           updated_at: string
+          upi_screenshot_url: string | null
+          uploaded_at: string | null
+          verified_at: string | null
+          verified_by: string | null
         }
         Insert: {
           amount: number
@@ -168,10 +210,13 @@ export type Database = {
           metadata?: Json | null
           phone?: string | null
           purpose: string
-          razorpay_order_id?: string | null
-          razorpay_payment_id?: string | null
+          rejection_reason?: string | null
           status?: string
           updated_at?: string
+          upi_screenshot_url?: string | null
+          uploaded_at?: string | null
+          verified_at?: string | null
+          verified_by?: string | null
         }
         Update: {
           amount?: number
@@ -184,10 +229,13 @@ export type Database = {
           metadata?: Json | null
           phone?: string | null
           purpose?: string
-          razorpay_order_id?: string | null
-          razorpay_payment_id?: string | null
+          rejection_reason?: string | null
           status?: string
           updated_at?: string
+          upi_screenshot_url?: string | null
+          uploaded_at?: string | null
+          verified_at?: string | null
+          verified_by?: string | null
         }
         Relationships: [
           {

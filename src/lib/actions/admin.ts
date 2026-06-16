@@ -4,6 +4,9 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile, type AuthProfile, type UserRole } from "@/lib/auth";
 import { BRANCHES_TUPLE } from "@/lib/validations/booking";
+import { signedProofUrl } from "@/lib/payment-proofs";
+import { fulfillMembershipPayment, type MembershipPayment } from "@/lib/payments-core";
+import { notifyCustomer } from "@/lib/notify";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -25,20 +28,30 @@ export type BookingRow = {
   time_slot: string;
   service: string;
   price: number;
+  amount: number;
   staff_name: string;
   special_requests: string | null;
   payment_status: string;
+  upi_screenshot_url: string | null;
+  uploaded_at: string | null;
+  verified_at: string | null;
+  rejection_reason: string | null;
   is_member: boolean;
   discount_applied: number;
   completed: boolean;
   created_at: string;
 };
 
+const BOOKING_COLUMNS =
+  "id, client_name, phone, branch, appointment_date, time_slot, service, price, amount, staff_name, special_requests, payment_status, upi_screenshot_url, uploaded_at, verified_at, rejection_reason, is_member, discount_applied, completed, created_at";
+
 const filtersSchema = z.object({
   date: z.string().optional(),
   branch: z.enum(BRANCHES_TUPLE).optional(),
   staff: z.string().optional(),
-  status: z.enum(["pending", "paid", "cancelled", "completed"]).optional(),
+  status: z
+    .enum(["pending_payment", "payment_uploaded", "verified", "rejected", "cancelled", "completed"])
+    .optional(),
 });
 
 /** Role-scoped booking list: admin = all, manager = own branch, staff = own name. */
@@ -50,9 +63,7 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
 
   let q = admin
     .from("appointments")
-    .select(
-      "id, client_name, phone, branch, appointment_date, time_slot, service, price, staff_name, special_requests, payment_status, is_member, discount_applied, completed, created_at",
-    )
+    .select(BOOKING_COLUMNS)
     .order("appointment_date", { ascending: false })
     .order("time_slot", { ascending: true });
 
@@ -131,11 +142,286 @@ export async function deleteBooking(input: { id: string }) {
   return { ok: true as const };
 }
 
+// ─────────────────────────── Payment verification ───────────────────────────
+export type VerificationRow = {
+  kind: "booking" | "membership";
+  id: string;
+  client_name: string;
+  phone: string;
+  branch: string | null;
+  appointment_date: string | null;
+  time_slot: string | null;
+  service: string | null;
+  staff_name: string | null;
+  amount: number;
+  uploaded_at: string | null;
+  has_proof: boolean;
+};
+
+/** Bookings + memberships awaiting verification (status payment_uploaded), newest first. */
+export async function listPendingVerifications() {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return { ...UNAUTHORIZED, rows: [] as VerificationRow[] };
+  const admin = createAdminClient();
+
+  const [apptRes, payRes] = await Promise.all([
+    admin
+      .from("appointments")
+      .select(BOOKING_COLUMNS)
+      .eq("payment_status", "payment_uploaded")
+      .order("uploaded_at", { ascending: false }),
+    admin
+      .from("payments")
+      .select("id, client_name, phone, amount, uploaded_at, upi_screenshot_url")
+      .eq("purpose", "membership")
+      .eq("status", "payment_uploaded")
+      .order("uploaded_at", { ascending: false }),
+  ]);
+
+  const appts = (apptRes.data as BookingRow[] | null) ?? [];
+  const pays =
+    (payRes.data as
+      | { id: string; client_name: string | null; phone: string | null; amount: number; uploaded_at: string | null; upi_screenshot_url: string | null }[]
+      | null) ?? [];
+
+  const rows: VerificationRow[] = [
+    ...appts.map((a): VerificationRow => ({
+      kind: "booking",
+      id: a.id,
+      client_name: a.client_name,
+      phone: a.phone,
+      branch: a.branch,
+      appointment_date: a.appointment_date,
+      time_slot: a.time_slot,
+      service: a.service,
+      staff_name: a.staff_name,
+      amount: a.amount,
+      uploaded_at: a.uploaded_at,
+      has_proof: !!a.upi_screenshot_url,
+    })),
+    ...pays.map((p): VerificationRow => ({
+      kind: "membership",
+      id: p.id,
+      client_name: p.client_name ?? "Member",
+      phone: p.phone ?? "",
+      branch: null,
+      appointment_date: null,
+      time_slot: null,
+      service: "1-Year Membership",
+      staff_name: null,
+      amount: p.amount,
+      uploaded_at: p.uploaded_at,
+      has_proof: !!p.upi_screenshot_url,
+    })),
+  ].sort((a, b) => (b.uploaded_at ?? "").localeCompare(a.uploaded_at ?? ""));
+
+  return { ok: true as const, rows };
+}
+
+const proofInput = z.object({ kind: z.enum(["booking", "membership"]), id: z.string().uuid() });
+
+/** Short-lived signed URL for a proof image. Admin = any; manager = own-branch bookings. */
+export async function getProofUrl(input: z.infer<typeof proofInput>) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, url: null };
+  const parsed = proofInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid", url: null };
+  const admin = createAdminClient();
+
+  let path: string | null = null;
+  if (parsed.data.kind === "booking") {
+    const { data } = await admin
+      .from("appointments")
+      .select("upi_screenshot_url, branch")
+      .eq("id", parsed.data.id)
+      .maybeSingle();
+    const row = data as { upi_screenshot_url: string | null; branch: string } | null;
+    if (!row) return { ok: false as const, error: "Not found", url: null };
+    if (profile.role === "manager" && row.branch !== profile.branch) {
+      return { ...UNAUTHORIZED, url: null };
+    }
+    path = row.upi_screenshot_url;
+  } else {
+    if (profile.role !== "admin") return { ...UNAUTHORIZED, url: null };
+    const { data } = await admin
+      .from("payments")
+      .select("upi_screenshot_url")
+      .eq("id", parsed.data.id)
+      .maybeSingle();
+    path = (data as { upi_screenshot_url: string | null } | null)?.upi_screenshot_url ?? null;
+  }
+
+  if (!path) return { ok: false as const, error: "No screenshot on file", url: null };
+  const url = await signedProofUrl(admin, path);
+  if (!url) return { ok: false as const, error: "Could not open screenshot", url: null };
+  return { ok: true as const, url };
+}
+
+/** Verify a booking payment → finalize the slot. */
+export async function verifyBookingPayment(input: { id: string }) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = idSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid id" };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("appointments")
+    .update({
+      payment_status: "verified",
+      verified_by: profile.id,
+      verified_at: new Date().toISOString(),
+      rejection_reason: null,
+    })
+    .eq("id", parsed.data.id)
+    .eq("payment_status", "payment_uploaded")
+    .select("client_name, phone")
+    .maybeSingle();
+  if (error) return { ok: false as const, error: error.message };
+  if (!data) return { ok: false as const, error: "Booking is no longer awaiting verification." };
+  const row = data as { client_name: string; phone: string };
+  // TODO(notify): wire a real SMS/WhatsApp provider.
+  await notifyCustomer({
+    phone: row.phone,
+    message: `Hi ${row.client_name}, your Rashi Nail Art Studio booking is confirmed. See you soon!`,
+  });
+  return { ok: true as const };
+}
+
+const rejectInput = z.object({ id: z.string().uuid(), reason: z.string().trim().min(1).max(300) });
+
+/** Reject a booking payment → release the held slot. */
+export async function rejectBookingPayment(input: z.infer<typeof rejectInput>) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = rejectInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("appointments")
+    .update({
+      payment_status: "rejected",
+      verified_by: profile.id,
+      verified_at: new Date().toISOString(),
+      rejection_reason: parsed.data.reason,
+    })
+    .eq("id", parsed.data.id)
+    .eq("payment_status", "payment_uploaded")
+    .select("client_name, phone")
+    .maybeSingle();
+  if (error) return { ok: false as const, error: error.message };
+  if (!data) return { ok: false as const, error: "Booking is no longer awaiting verification." };
+  const row = data as { client_name: string; phone: string };
+  await notifyCustomer({
+    phone: row.phone,
+    message: `Hi ${row.client_name}, we couldn't verify your payment: ${parsed.data.reason}. Please re-book or contact the studio.`,
+  });
+  return { ok: true as const };
+}
+
+/** Verify a membership payment → create the membership (10-day activation). */
+export async function verifyMembershipPayment(input: { id: string }) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = idSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid id" };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("payments")
+    .update({
+      status: "verified",
+      verified_by: profile.id,
+      verified_at: new Date().toISOString(),
+      rejection_reason: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.data.id)
+    .eq("purpose", "membership")
+    .eq("status", "payment_uploaded")
+    .select("id, purpose, client_name, phone, amount, membership_id")
+    .maybeSingle();
+  if (error) return { ok: false as const, error: error.message };
+  if (!data) return { ok: false as const, error: "Request is no longer awaiting verification." };
+  const pay = data as MembershipPayment;
+  await fulfillMembershipPayment(admin, pay);
+  await notifyCustomer({
+    phone: pay.phone ?? "",
+    message: `Hi ${pay.client_name ?? "there"}, your Rashi membership is confirmed — benefits activate in 10 days.`,
+  });
+  return { ok: true as const };
+}
+
+/** Reject a membership payment. */
+export async function rejectMembershipPayment(input: z.infer<typeof rejectInput>) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = rejectInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("payments")
+    .update({
+      status: "rejected",
+      verified_by: profile.id,
+      verified_at: new Date().toISOString(),
+      rejection_reason: parsed.data.reason,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.data.id)
+    .eq("purpose", "membership")
+    .eq("status", "payment_uploaded")
+    .select("id")
+    .maybeSingle();
+  if (error) return { ok: false as const, error: error.message };
+  if (!data) return { ok: false as const, error: "Request is no longer awaiting verification." };
+  return { ok: true as const };
+}
+
+// ─────────────────────────────── UPI settings ───────────────────────────────
+export type AppSettings = { upi_id: string; payee_name: string; upi_qr_url: string };
+
+export async function getAppSettings() {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return { ...UNAUTHORIZED, settings: null };
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("app_settings")
+    .select("upi_id, payee_name, upi_qr_url")
+    .eq("id", "default")
+    .maybeSingle();
+  const settings = (data as AppSettings | null) ?? {
+    upi_id: "",
+    payee_name: "Rashi Nail Art Studio",
+    upi_qr_url: "/upi-qr.svg",
+  };
+  return { ok: true as const, settings };
+}
+
+const settingsInput = z.object({
+  upi_id: z.string().trim().max(120),
+  payee_name: z.string().trim().min(1).max(120),
+  upi_qr_url: z.string().trim().min(1).max(500),
+});
+
+export async function saveAppSettings(input: z.infer<typeof settingsInput>) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = settingsInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("app_settings")
+    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .eq("id", "default");
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
 // ─────────────────────────────── Overview ───────────────────────────────────
 export type Overview = {
   totalRevenue: number;
   feeRevenue: number;
   membershipRevenue: number;
+  pendingVerification: number;
   bookingsToday: number;
   bookingsWeek: number;
   bookingsMonth: number;
@@ -149,20 +435,37 @@ export async function getAdminOverview() {
   if (!profile) return { ...UNAUTHORIZED, overview: null };
   const admin = createAdminClient();
 
-  const [payRes, apptRes, memRes] = await Promise.all([
-    admin.from("payments").select("amount, purpose, created_at").eq("status", "paid"),
-    admin.from("appointments").select("appointment_date, branch").eq("payment_status", "paid"),
+  const [memberPayRes, apptRes, memRes, pendingApptRes, pendingMemRes] = await Promise.all([
+    // membership revenue: verified membership payments only
+    admin
+      .from("payments")
+      .select("amount, created_at")
+      .eq("purpose", "membership")
+      .eq("status", "verified"),
+    // confirmed bookings: verified only (fee revenue derives from these)
+    admin
+      .from("appointments")
+      .select("appointment_date, branch, amount, verified_at")
+      .eq("payment_status", "verified"),
     admin.from("memberships").select("id").eq("active", true),
+    admin.from("appointments").select("id", { count: "exact", head: true }).eq("payment_status", "payment_uploaded"),
+    admin
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .eq("purpose", "membership")
+      .eq("status", "payment_uploaded"),
   ]);
 
-  const payments = (payRes.data as { amount: number; purpose: string; created_at: string }[] | null) ?? [];
-  const appts = (apptRes.data as { appointment_date: string; branch: string }[] | null) ?? [];
+  const memberPays = (memberPayRes.data as { amount: number; created_at: string }[] | null) ?? [];
+  const appts =
+    (apptRes.data as
+      | { appointment_date: string; branch: string; amount: number; verified_at: string | null }[]
+      | null) ?? [];
   const members = (memRes.data as { id: string }[] | null) ?? [];
+  const pendingVerification = (pendingApptRes.count ?? 0) + (pendingMemRes.count ?? 0);
 
-  const feeRevenue = payments.filter((p) => p.purpose === "booking").reduce((s, p) => s + p.amount, 0);
-  const membershipRevenue = payments
-    .filter((p) => p.purpose === "membership")
-    .reduce((s, p) => s + p.amount, 0);
+  const feeRevenue = appts.reduce((s, a) => s + (a.amount ?? 0), 0);
+  const membershipRevenue = memberPays.reduce((s, p) => s + p.amount, 0);
 
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
@@ -181,14 +484,15 @@ export async function getAdminOverview() {
     d.setDate(d.getDate() - i);
     days.push(d.toISOString().slice(0, 10));
   }
-  const revenueByDay = days.map((date) => {
-    const dayPays = payments.filter((p) => p.created_at.slice(0, 10) === date);
-    return {
-      date: date.slice(5),
-      fees: dayPays.filter((p) => p.purpose === "booking").reduce((s, p) => s + p.amount, 0),
-      memberships: dayPays.filter((p) => p.purpose === "membership").reduce((s, p) => s + p.amount, 0),
-    };
-  });
+  const revenueByDay = days.map((date) => ({
+    date: date.slice(5),
+    fees: appts
+      .filter((a) => (a.verified_at ?? "").slice(0, 10) === date)
+      .reduce((s, a) => s + (a.amount ?? 0), 0),
+    memberships: memberPays
+      .filter((p) => p.created_at.slice(0, 10) === date)
+      .reduce((s, p) => s + p.amount, 0),
+  }));
 
   const branchCounts = new Map<string, number>();
   for (const a of appts) branchCounts.set(a.branch, (branchCounts.get(a.branch) ?? 0) + 1);
@@ -198,6 +502,7 @@ export async function getAdminOverview() {
     totalRevenue: feeRevenue + membershipRevenue,
     feeRevenue,
     membershipRevenue,
+    pendingVerification,
     bookingsToday,
     bookingsWeek,
     bookingsMonth,

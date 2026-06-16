@@ -5,14 +5,22 @@ import { createClient } from "@/lib/supabase/server";
 import { dashboardPathForRole, type UserRole } from "@/lib/auth";
 import { signInSchema } from "@/lib/validations/auth";
 
+const ROLE_LABEL: Record<UserRole, string> = {
+  admin: "admin",
+  manager: "manager",
+  staff: "staff",
+};
+
 /**
- * Sign in with email + password (Supabase Auth). On success, redirects to the
- * role's dashboard. On failure, returns an error for inline display.
+ * Sign in with email + password (Supabase Auth). The real role always comes from
+ * the DB profile — never from the page the user used. When `expectedRole` is
+ * given (role-specific portals), a mismatching account is signed back out with a
+ * pointer to the correct portal. On success, redirects to the role's dashboard.
  */
-export async function signIn(values: {
-  email: string;
-  password: string;
-}): Promise<{ error: string } | void> {
+export async function signIn(
+  values: { email: string; password: string },
+  expectedRole?: UserRole,
+): Promise<{ error: string } | void> {
   const parsed = signInSchema.safeParse(values);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -35,6 +43,13 @@ export async function signIn(values: {
     // Authenticated but no internal profile — not a staff/admin account.
     await supabase.auth.signOut();
     return { error: "This account has no staff access." };
+  }
+
+  if (expectedRole && role !== expectedRole) {
+    await supabase.auth.signOut();
+    return {
+      error: `That's a ${ROLE_LABEL[role]} account — please use the ${ROLE_LABEL[role]} login.`,
+    };
   }
 
   redirect(dashboardPathForRole(role));

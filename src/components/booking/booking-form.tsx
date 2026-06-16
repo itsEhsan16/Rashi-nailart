@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, Crown, CheckCircle2, Loader2 } from "lucide-react";
+import { CalendarIcon, Crown, Loader2, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,11 +27,11 @@ import { bookingFormSchema, type BookingFormValues } from "@/lib/validations/boo
 import {
   checkMembership,
   getBookedSlots,
-  createBookingOrder,
-  cancelPendingBooking,
+  createBooking,
+  uploadBookingProof,
+  type PaymentSettings,
 } from "@/lib/actions/booking";
-import { verifyPayment } from "@/lib/actions/payments";
-import { loadRazorpay, openRazorpayCheckout } from "@/lib/razorpay";
+import { PaymentScreen } from "@/components/booking/payment-screen";
 import type { ServiceOption, BranchOption, StaffOption } from "@/lib/catalog";
 
 type Props = {
@@ -42,13 +42,23 @@ type Props = {
   bookingFee: number;
 };
 
-type Confirmation = {
+type Summary = {
   service: string;
   date: string;
   slot: string;
   staff: string;
   branch: string;
 };
+
+/** Persisted across reloads so the customer never loses an in-flight payment. */
+type PendingPayment = {
+  appointmentId: string;
+  amount: number;
+  settings: PaymentSettings;
+  summary: Summary;
+};
+
+const PENDING_KEY = "rashi:pending-booking";
 
 export function BookingForm({ services, timeSlots, branches, staff, bookingFee }: Props) {
   const {
@@ -76,8 +86,29 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   const [isMember, setIsMember] = useState(false);
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
-  const [paying, setPaying] = useState(false);
-  const [confirmed, setConfirmed] = useState<Confirmation | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [pending, setPending] = useState<PendingPayment | null>(null);
+  const [submitted, setSubmitted] = useState<Summary | null>(null);
+
+  // Restore an in-flight payment after a refresh/navigation so details aren't lost.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(PENDING_KEY);
+      if (raw) setPending(JSON.parse(raw) as PendingPayment);
+    } catch {
+      /* ignore malformed storage */
+    }
+  }, []);
+
+  const persistPending = useCallback((p: PendingPayment | null) => {
+    setPending(p);
+    try {
+      if (p) sessionStorage.setItem(PENDING_KEY, JSON.stringify(p));
+      else sessionStorage.removeItem(PENDING_KEY);
+    } catch {
+      /* storage may be unavailable */
+    }
+  }, []);
 
   const phone = watch("phone");
   const branch = watch("branch");
@@ -139,10 +170,10 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   const slotsReady = Boolean(branch && staffName && apptDate);
 
   async function onSubmit(values: BookingFormValues) {
-    setPaying(true);
+    setSubmitting(true);
     const dateStr = format(values.appointment_date, "yyyy-MM-dd");
     try {
-      const order = await createBookingOrder({
+      const res = await createBooking({
         client_name: values.client_name,
         phone: values.phone,
         branch: values.branch,
@@ -153,8 +184,8 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         special_requests: values.special_requests || null,
       });
 
-      if (!order.ok) {
-        toast.error(order.error);
+      if (!res.ok) {
+        toast.error(res.error);
         const r = await getBookedSlots({
           branch: values.branch,
           staff_name: values.staff_name,
@@ -164,78 +195,81 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         return;
       }
 
-      if (!order.keyId) {
-        toast.error("Online payments aren’t configured yet. Please contact the studio.");
-        if (order.appointmentId) await cancelPendingBooking({ appointmentId: order.appointmentId });
-        return;
-      }
-
-      await loadRazorpay();
-      let result;
-      try {
-        result = await openRazorpayCheckout({
-          keyId: order.keyId,
-          orderId: order.orderId,
-          amount: order.amount,
-          currency: order.currency,
-          name: "Rashi Nail Art Studio",
-          description: `Booking fee · ${values.service}`,
-          prefill: { name: values.client_name, contact: values.phone },
-        });
-      } catch (err) {
-        if (order.appointmentId) await cancelPendingBooking({ appointmentId: order.appointmentId });
-        toast.message(err instanceof Error ? err.message : "Payment cancelled");
-        return;
-      }
-
-      const verified = await verifyPayment({
-        razorpay_order_id: result.razorpay_order_id,
-        razorpay_payment_id: result.razorpay_payment_id,
-        razorpay_signature: result.razorpay_signature,
+      // Slot is held. Move to the payment screen with details preserved.
+      persistPending({
+        appointmentId: res.appointmentId,
+        amount: res.amount,
+        settings: res.settings,
+        summary: {
+          service: values.service,
+          date: format(values.appointment_date, "PPP"),
+          slot: values.time_slot,
+          staff: values.staff_name,
+          branch: values.branch,
+        },
       });
-      if (!verified.ok) {
-        toast.error("Payment received — we’ll confirm your booking shortly.");
-        return;
-      }
-
-      toast.success("Your appointment is confirmed ✨");
-      setConfirmed({
-        service: values.service,
-        date: format(values.appointment_date, "PPP"),
-        slot: values.time_slot,
-        staff: values.staff_name,
-        branch: values.branch,
-      });
-      reset();
-      setIsMember(false);
-      setBookedSlots([]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Something went wrong");
     } finally {
-      setPaying(false);
+      setSubmitting(false);
     }
   }
 
-  if (confirmed) {
+  function onProofUploaded() {
+    if (pending) setSubmitted(pending.summary);
+    persistPending(null);
+    reset();
+    setIsMember(false);
+    setBookedSlots([]);
+    toast.success("Payment proof received ✨");
+  }
+
+  // Awaiting-verification confirmation.
+  if (submitted) {
     return (
       <Card className="p-8 md:p-10 text-center shadow-elegant border-border/60">
-        <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500/15 text-emerald-600 grid place-items-center">
-          <CheckCircle2 className="h-7 w-7" />
+        <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-amber-500/15 text-amber-600 grid place-items-center">
+          <Clock className="h-7 w-7" />
         </div>
-        <h3 className="font-display text-2xl font-semibold">Booking confirmed ✨</h3>
+        <h3 className="font-display text-2xl font-semibold">Payment proof received</h3>
         <p className="mt-2 text-muted-foreground">
-          {confirmed.service} with {confirmed.staff} at {confirmed.branch}
+          {submitted.service} with {submitted.staff} at {submitted.branch}
         </p>
         <p className="text-muted-foreground">
-          {confirmed.date} · {confirmed.slot}
+          {submitted.date} · {submitted.slot}
         </p>
         <p className="mt-4 text-sm text-muted-foreground">
-          A confirmation will be sent to your phone. See you soon!
+          Your booking is <span className="font-medium text-foreground">pending verification</span>.
+          You&apos;ll be notified once it&apos;s confirmed.
         </p>
-        <Button className="mt-6" variant="outline" onClick={() => setConfirmed(null)}>
+        <Button className="mt-6" variant="outline" onClick={() => setSubmitted(null)}>
           Book another appointment
         </Button>
       </Card>
+    );
+  }
+
+  // Payment screen — held booking awaiting the UPI screenshot.
+  if (pending) {
+    return (
+      <div className="space-y-4">
+        <PaymentScreen
+          id={pending.appointmentId}
+          idField="appointmentId"
+          amount={pending.amount}
+          settings={pending.settings}
+          uploadAction={uploadBookingProof}
+          forLabel="booking fee"
+          onUploaded={onProofUploaded}
+        />
+        <button
+          type="button"
+          className="mx-auto block text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+          onClick={() => persistPending(null)}
+        >
+          Cancel and edit booking details
+        </button>
+      </div>
     );
   }
 
@@ -485,19 +519,20 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
 
         <Button
           type="submit"
-          disabled={paying}
+          disabled={submitting}
           className="w-full bg-gradient-hero hover:opacity-95 text-primary-foreground shadow-soft h-12"
         >
-          {paying ? (
+          {submitting ? (
             <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing…
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Holding your slot…
             </>
           ) : (
-            <>Pay ₹{bookingFee} &amp; Confirm Booking</>
+            <>Continue to payment · ₹{bookingFee}</>
           )}
         </Button>
         <p className="text-xs text-center text-muted-foreground">
-          Your booking is confirmed only after the ₹{bookingFee} fee is paid. Secured by Razorpay.
+          We&apos;ll hold your slot, then you pay the ₹{bookingFee} booking fee over UPI and upload a
+          screenshot. Confirmed after we verify the payment.
         </p>
       </form>
     </Card>

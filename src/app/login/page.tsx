@@ -1,34 +1,37 @@
-"use client";
-
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import type { Metadata } from "next";
 import Link from "next/link";
-import { Sparkles, ArrowLeft } from "lucide-react";
-import { toast } from "sonner";
+import { Sparkles, ArrowLeft, ShieldCheck, Building2, Scissors, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { signIn } from "@/lib/actions/auth";
-import { signInSchema, type SignInValues } from "@/lib/validations/auth";
 
-export default function LoginPage() {
-  const {
-    register,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<SignInValues>({
-    resolver: zodResolver(signInSchema),
-    defaultValues: { email: "", password: "" },
-  });
+export const metadata: Metadata = {
+  title: "Sign in",
+  robots: { index: false, follow: false },
+};
 
-  async function onSubmit(values: SignInValues) {
-    const res = await signIn(values);
-    // On success the server action redirects; only failures return here.
-    if (res?.error) toast.error(res.error);
-  }
+const PORTALS = [
+  {
+    href: "/login/admin",
+    label: "Admin",
+    desc: "Revenue, payment verification, team & settings",
+    icon: <ShieldCheck className="h-5 w-5" />,
+  },
+  {
+    href: "/login/manager",
+    label: "Manager",
+    desc: "Your branch's bookings, members & stylists",
+    icon: <Building2 className="h-5 w-5" />,
+  },
+  {
+    href: "/login/staff",
+    label: "Staff",
+    desc: "Your appointments",
+    icon: <Scissors className="h-5 w-5" />,
+  },
+];
 
+export default function LoginChooserPage() {
   return (
     <div className="min-h-screen bg-gradient-soft flex flex-col">
       <header className="border-b border-border/50 bg-background/60 backdrop-blur-md">
@@ -51,51 +54,29 @@ export default function LoginPage() {
       </header>
 
       <main className="flex-1 flex items-center justify-center px-6 py-12">
-        <Card className="w-full max-w-md p-8 shadow-elegant">
-          <h1 className="font-display text-3xl font-semibold text-center">Sign in</h1>
+        <div className="w-full max-w-md">
+          <h1 className="font-display text-3xl font-semibold text-center">Choose your portal</h1>
           <p className="mt-2 text-sm text-muted-foreground text-center">
-            Staff, manager &amp; admin portal
+            Sign in to the area you manage.
           </p>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-4" noValidate>
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                autoFocus
-                placeholder="you@rashi.studio"
-                aria-invalid={!!errors.email}
-                {...register("email")}
-              />
-              {errors.email && (
-                <p className="text-xs text-destructive">{errors.email.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="••••••••"
-                aria-invalid={!!errors.password}
-                {...register("password")}
-              />
-              {errors.password && (
-                <p className="text-xs text-destructive">{errors.password.message}</p>
-              )}
-            </div>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full h-11 bg-gradient-hero text-primary-foreground"
-            >
-              {isSubmitting ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-        </Card>
+          <div className="mt-8 space-y-3">
+            {PORTALS.map((p) => (
+              <Link key={p.href} href={p.href} className="block">
+                <Card className="p-4 flex items-center gap-4 transition-colors hover:border-primary/50 hover:bg-primary/5">
+                  <div className="h-11 w-11 shrink-0 rounded-full bg-primary/10 text-primary grid place-items-center">
+                    {p.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{p.label}</div>
+                    <div className="text-xs text-muted-foreground">{p.desc}</div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
       </main>
     </div>
   );

@@ -14,7 +14,7 @@ export default async function StaffLayout({
   children: React.ReactNode;
 }) {
   const profile = await getCurrentProfile();
-  if (!profile) redirect("/login?redirect=/staff");
+  if (!profile) redirect("/login/staff");
   if (profile.role !== "staff") redirect(dashboardPathForRole(profile.role));
 
   return <DashboardShell profile={profile}>{children}</DashboardShell>;

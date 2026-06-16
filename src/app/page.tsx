@@ -87,11 +87,6 @@ export default async function HomePage() {
             <a href="#faq" className="hover:text-foreground transition-colors">FAQ</a>
           </nav>
           <div className="flex items-center gap-2">
-            <Button asChild variant="ghost">
-              <Link href="/login">
-                <LogIn className="mr-2 h-4 w-4" /> Staff Login
-              </Link>
-            </Button>
             <Button asChild className="bg-gradient-hero text-primary-foreground shadow-soft">
               <a href="#book">Book now</a>
             </Button>
@@ -306,9 +301,17 @@ export default async function HomePage() {
           </div>
           <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
             <p className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Secure payments by Razorpay
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Simple, secure UPI payments
             </p>
-            <p>© {new Date().getFullYear()} Rashi Nail Art Studio. All rights reserved.</p>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/login"
+                className="flex items-center gap-1.5 hover:text-foreground transition-colors"
+              >
+                <LogIn className="h-3.5 w-3.5" /> Staff &amp; admin login
+              </Link>
+              <p>© {new Date().getFullYear()} Rashi Nail Art Studio. All rights reserved.</p>
+            </div>
           </div>
         </div>
       </footer>

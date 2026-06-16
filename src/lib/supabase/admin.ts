@@ -7,12 +7,14 @@ import type { Database } from "@/integrations/supabase/types";
  * fails at call time (with a clear message) rather than at module import.
  */
 export function createAdminClient() {
-  const url = process.env.SUPABASE_URL;
+  // Falls back to the public URL so a single URL var is enough (server still
+  // requires the secret service-role key, which is never exposed to the browser).
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {
     throw new Error(
-      "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY. Set them in .env.local (and in Vercel project settings).",
+      "Missing Supabase URL or SUPABASE_SERVICE_ROLE_KEY. Set them in .env.local (and in Vercel project settings).",
     );
   }
 

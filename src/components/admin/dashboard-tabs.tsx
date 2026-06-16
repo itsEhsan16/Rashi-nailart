@@ -5,6 +5,8 @@ import type { UserRole } from "@/lib/auth";
 import { BRANCHES } from "@/lib/salon-data";
 import { OverviewPanel } from "./overview-panel";
 import { BookingsPanel } from "./bookings-panel";
+import { PaymentsPanel } from "./payments-panel";
+import { SettingsPanel } from "./settings-panel";
 import { MembersPanel } from "./members-panel";
 import { ManagePanel } from "./manage-panel";
 import { TeamPanel } from "./team-panel";
@@ -18,13 +20,18 @@ export function DashboardTabs({ role, branch }: { role: UserRole; branch: string
       <Tabs defaultValue="overview">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="bookings">Bookings</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
           <TabsTrigger value="manage">Manage</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="team">Team</TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="mt-6">
           <OverviewPanel />
+        </TabsContent>
+        <TabsContent value="payments" className="mt-6">
+          <PaymentsPanel />
         </TabsContent>
         <TabsContent value="bookings" className="mt-6">
           <BookingsPanel role="admin" />
@@ -34,6 +41,9 @@ export function DashboardTabs({ role, branch }: { role: UserRole; branch: string
         </TabsContent>
         <TabsContent value="manage" className="mt-6">
           <ManagePanel />
+        </TabsContent>
+        <TabsContent value="settings" className="mt-6">
+          <SettingsPanel />
         </TabsContent>
         <TabsContent value="team" className="mt-6">
           <TeamPanel role="admin" branch={null} />
