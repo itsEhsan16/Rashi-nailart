@@ -84,8 +84,8 @@ export function MembershipDialog({ price }: { price: number }) {
             </div>
             <DialogTitle className="font-display text-xl">Payment proof received</DialogTitle>
             <DialogDescription className="mt-2">
-              Your membership is pending verification. Once we confirm your payment, benefits
-              activate 10 days later. You&apos;ll be notified.
+              Your membership is pending verification. Once we confirm your payment, your benefits
+              are active right away. You&apos;ll be notified.
             </DialogDescription>
             <Button className="mt-6" variant="outline" onClick={() => setOpen(false)}>
               Close
@@ -115,8 +115,8 @@ export function MembershipDialog({ price }: { price: number }) {
                 <Crown className="h-5 w-5 text-primary" /> One Year Membership
               </DialogTitle>
               <DialogDescription>
-                ₹{price} for the year — 50% off all nail art services. Benefits activate 10 days
-                after purchase. We use your phone to recognise you at booking.
+                ₹{price} for the year — 50% off all nail art services. Benefits start the day you
+                join. We use your phone to recognise you at booking.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>

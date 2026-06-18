@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const BRANCHES_TUPLE = ["Vile Parle", "Bandra", "Kandivali"] as const;
+export const BRANCHES_TUPLE = ["Vile Parle", "Bandra"] as const;
 
 /** +91 / 10-digit Indian mobile. */
 export const phoneSchema = z

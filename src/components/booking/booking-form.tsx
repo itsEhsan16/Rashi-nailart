@@ -116,7 +116,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   const apptDate = watch("appointment_date");
   const serviceName = watch("service");
 
-  // Auto-detect membership by phone (debounced). Only active (10-day) members match.
+  // Auto-detect membership by phone (debounced). Only active members match.
   useEffect(() => {
     const digits = (phone ?? "").replace(/\D/g, "");
     if (digits.length < 10) {

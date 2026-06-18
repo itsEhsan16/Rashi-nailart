@@ -318,7 +318,7 @@ export async function rejectBookingPayment(input: z.infer<typeof rejectInput>) {
   return { ok: true as const };
 }
 
-/** Verify a membership payment → create the membership (10-day activation). */
+/** Verify a membership payment → create the membership (benefits start on join). */
 export async function verifyMembershipPayment(input: { id: string }) {
   const profile = await requireRole(["admin"]);
   if (!profile) return UNAUTHORIZED;
@@ -345,7 +345,7 @@ export async function verifyMembershipPayment(input: { id: string }) {
   await fulfillMembershipPayment(admin, pay);
   await notifyCustomer({
     phone: pay.phone ?? "",
-    message: `Hi ${pay.client_name ?? "there"}, your Rashi membership is confirmed — benefits activate in 10 days.`,
+    message: `Hi ${pay.client_name ?? "there"}, your Rashi membership is confirmed — your benefits are active now. Enjoy 50% off nail art!`,
   });
   return { ok: true as const };
 }
