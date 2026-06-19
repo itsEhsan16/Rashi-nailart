@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Logo } from "@/components/logo";
 import { BookingForm } from "@/components/booking/booking-form";
 import { MembershipDialog } from "@/components/booking/membership-dialog";
 import { Reveal } from "@/components/landing/reveal";
@@ -33,7 +34,7 @@ const GALLERY = [
 const TESTIMONIALS = [
   { name: "Aanya S.", branch: "Bandra", text: "Booked in under a minute and my acrylics lasted weeks. The membership pays for itself!" },
   { name: "Priya M.", branch: "Vile Parle", text: "The loveliest studio — the stylists are so detailed and the space is gorgeous." },
-  { name: "Rehana K.", branch: "Kandivali", text: "Quick, clean, and the gel polish is flawless every single time. Highly recommend." },
+  { name: "Rehana K.", branch: "Vile Parle", text: "Quick, clean, and the gel polish is flawless every single time. Highly recommend." },
 ];
 
 export default async function HomePage() {
@@ -44,7 +45,7 @@ export default async function HomePage() {
     "@type": "HealthAndBeautyBusiness",
     name: "Rashi Nail Art Studio",
     description:
-      "Premium nail art, gel polish and extensions across Vile Parle, Bandra and Kandivali, Mumbai.",
+      "Premium nail art, gel polish and extensions across Vile Parle and Bandra, Mumbai.",
     url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
     image: `${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/og.png`,
     areaServed: "Mumbai",
@@ -71,13 +72,7 @@ export default async function HomePage() {
       <header className="border-b border-border/50 bg-background/60 backdrop-blur-md sticky top-0 z-40">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-full bg-gradient-hero grid place-items-center shadow-soft">
-              <Sparkles className="h-4 w-4 text-primary-foreground" />
-            </div>
-            <span className="font-display font-semibold flex flex-col leading-tight">
-              <span className="text-xl">Rashi</span>
-              <span className="text-sm">Nail Art Studio</span>
-            </span>
+            <Logo priority className="h-11 w-auto" />
           </Link>
           <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#services" className="hover:text-foreground transition-colors">Services</a>
@@ -194,7 +189,7 @@ export default async function HomePage() {
                   Get <span className="font-medium text-foreground">50% off any nail art service</span> for a full year.
                 </p>
                 <p className="text-xs text-muted-foreground mt-1 italic">
-                  Note: membership benefits activate 10 days after purchase.
+                  Note: membership benefits start the day you join.
                 </p>
               </div>
             </div>
@@ -285,10 +280,7 @@ export default async function HomePage() {
         <div className="mx-auto max-w-6xl px-6 py-10">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-gradient-hero grid place-items-center">
-                <Sparkles className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <span className="font-display font-semibold">Rashi Nail Art Studio</span>
+              <Logo className="h-9 w-auto" />
             </div>
             <div className="flex items-center gap-4 text-muted-foreground">
               <a href="#" aria-label="Instagram" className="hover:text-primary transition-colors">

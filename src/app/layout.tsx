@@ -11,7 +11,7 @@ export const metadata: Metadata = {
     template: "%s · Rashi Nail Art Studio",
   },
   description:
-    "Book your salon moment at Rashi Nail Art Studio — Vile Parle, Bandra & Kandivali. Premium nail art, gel polish & extensions. Members get 50% off nail art for a year.",
+    "Book your salon moment at Rashi Nail Art Studio — Vile Parle & Bandra. Premium nail art, gel polish & extensions. Members get 50% off nail art for a year.",
   applicationName: "Rashi Nail Art Studio",
   authors: [{ name: "Rashi Nail Art Studio" }],
   keywords: [
@@ -20,13 +20,12 @@ export const metadata: Metadata = {
     "nail extensions",
     "Vile Parle salon",
     "Bandra nail studio",
-    "Kandivali nails",
   ],
   openGraph: {
     type: "website",
     title: "Rashi Nail Art Studio — Premium Nails, Gel & Extensions",
     description:
-      "Premium nail art, gel polish & extensions across Vile Parle, Bandra & Kandivali. Reserve your spot in under a minute.",
+      "Premium nail art, gel polish & extensions across Vile Parle & Bandra. Reserve your spot in under a minute.",
     siteName: "Rashi Nail Art Studio",
     url: siteUrl,
   },

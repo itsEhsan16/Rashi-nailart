@@ -1,4 +1,4 @@
-export const BRANCHES = ["Vile Parle", "Bandra", "Kandivali"] as const;
+export const BRANCHES = ["Vile Parle", "Bandra"] as const;
 export type Branch = (typeof BRANCHES)[number];
 
 export const TIME_SLOTS = [

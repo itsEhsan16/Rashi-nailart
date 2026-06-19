@@ -18,9 +18,10 @@ function isoDate(d: Date): string {
 }
 
 /**
- * Create the membership a verified membership payment pays for: starts today,
- * ACTIVATES in 10 days, expires in 1 year. Idempotent — if the payment already
- * links a membership, this is a no-op. Returns the membership id (existing or new).
+ * Create the membership a verified membership payment pays for: benefits start
+ * the day the member joins (activation = start date), expires in 1 year. Idempotent
+ * — if the payment already links a membership, this is a no-op. Returns the
+ * membership id (existing or new).
  */
 export async function fulfillMembershipPayment(
   admin: Admin,
@@ -30,8 +31,6 @@ export async function fulfillMembershipPayment(
   if (pay.membership_id) return pay.membership_id; // already fulfilled
 
   const today = new Date();
-  const activation = new Date(today);
-  activation.setDate(activation.getDate() + 10); // 10-day activation rule
   const expires = new Date(today);
   expires.setFullYear(expires.getFullYear() + 1);
 
@@ -41,7 +40,7 @@ export async function fulfillMembershipPayment(
       client_name: pay.client_name ?? "Member",
       phone: pay.phone ?? "",
       start_date: isoDate(today),
-      activation_date: isoDate(activation),
+      activation_date: isoDate(today), // benefits start on join
       expires_at: isoDate(expires),
       active: true,
       amount_paid: pay.amount,

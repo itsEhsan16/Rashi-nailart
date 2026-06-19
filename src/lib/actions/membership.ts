@@ -11,7 +11,7 @@ import { uploadProofSchema } from "@/lib/validations/booking";
  * Start a ₹100 membership purchase. Creates a `payments` row in `pending_payment`
  * and returns its id (the customer's upload capability) plus the UPI settings.
  * The membership row itself is only created once an admin verifies the proof
- * (see fulfillMembershipPayment), with activation_date = +10 days.
+ * (see fulfillMembershipPayment), with benefits starting on the join date.
  */
 export async function createMembership(input: MembershipValues) {
   const parsed = membershipSchema.safeParse(input);
