@@ -14,8 +14,8 @@ export const metadata: Metadata = {
 const PORTALS = [
   {
     href: "/login/admin",
-    label: "Admin",
-    desc: "Revenue, payment verification, team & settings",
+    label: "Jagruti Mehta",
+    desc: "Owner & administrator portal",
     icon: <ShieldCheck className="h-5 w-5" />,
   },
   {
