@@ -186,7 +186,7 @@ export default async function HomePage() {
                   Get <span className="font-medium text-foreground">50% off any nail art service</span> for a full year.
                 </p>
                 <p className="text-xs text-muted-foreground mt-1 italic">
-                  Note: membership benefits start the day you join.
+                  Note: membership benefits start the day you join. ₹{BOOKING_FEE} will be deducted from total fees.
                 </p>
               </div>
             </div>
