@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, ShieldCheck, Building2, Scissors, ChevronRight } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Building2, User, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,7 +28,7 @@ const PORTALS = [
     href: "/login/staff",
     label: "Staff",
     desc: "Your appointments",
-    icon: <Scissors className="h-5 w-5" />,
+    icon: <User className="h-5 w-5" />,
   },
 ];
 

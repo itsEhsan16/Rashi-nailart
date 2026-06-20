@@ -532,7 +532,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         </Button>
         <p className="text-xs text-center text-muted-foreground">
           We&apos;ll hold your slot, then you pay the ₹{bookingFee} booking fee over UPI and upload a
-          screenshot. Confirmed after we verify the payment.
+          screenshot. This ₹{bookingFee} will be deducted from total fees. Confirmed after we verify the payment.
         </p>
       </form>
     </Card>
