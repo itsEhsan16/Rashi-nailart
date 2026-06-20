@@ -252,9 +252,6 @@ export default async function HomePage() {
           <p className="mt-2 text-muted-foreground">
             Pick a branch, stylist, date &amp; service — confirm with a ₹{BOOKING_FEE} fee.
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            50 Rupees will be deducted from total fees.
-          </p>
         </Reveal>
         <BookingForm
           services={services}
