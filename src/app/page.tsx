@@ -186,7 +186,7 @@ export default async function HomePage() {
                   Get <span className="font-medium text-foreground">50% off any nail art service</span> for a full year.
                 </p>
                 <p className="text-xs text-muted-foreground mt-1 italic">
-                  Note: membership benefits start the day you join. ₹{BOOKING_FEE} will be deducted from total fees.
+                  Note: membership benefits start the day you join.
                 </p>
               </div>
             </div>
@@ -251,6 +251,9 @@ export default async function HomePage() {
           <h2 className="font-display text-3xl md:text-4xl font-semibold">Book your appointment</h2>
           <p className="mt-2 text-muted-foreground">
             Pick a branch, stylist, date &amp; service — confirm with a ₹{BOOKING_FEE} fee.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            50 Rupees will be deducted from total fees.
           </p>
         </Reveal>
         <BookingForm
