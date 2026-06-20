@@ -20,7 +20,7 @@ const CONFIG: Record<
   { title: string; desc: string; icon: React.ReactNode; placeholder: string }
 > = {
   admin: {
-    title: "Admin sign in",
+    title: "Jagruti Mehta",
     desc: "Owner & administrator portal",
     icon: <ShieldCheck className="h-5 w-5" />,
     placeholder: "admin@rashi.studio",

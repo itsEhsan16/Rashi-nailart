@@ -10,6 +10,8 @@ import {
   Quote,
   CheckCircle2,
 } from "lucide-react";
+import fs from "fs";
+import path from "path";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,17 +21,27 @@ import { BookingForm } from "@/components/booking/booking-form";
 import { MembershipDialog } from "@/components/booking/membership-dialog";
 import { Reveal } from "@/components/landing/reveal";
 import { Faq } from "@/components/landing/faq";
+import { NailCard } from "@/components/landing/nail-card";
 import { getCatalog } from "@/lib/catalog";
 import { MEMBERSHIP_PRICE, BOOKING_FEE } from "@/lib/salon-data";
 
-const GALLERY = [
-  "Acrylic Extensions",
-  "Gel Polish",
-  "Hand-painted Nail Art",
-  "French Tips",
-  "Chrome Finish",
-  "Ombré Sets",
-];
+function getNailCategories() {
+  const dir = path.join(process.cwd(), "public", "nail-categories");
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => {
+      const files = fs.readdirSync(path.join(dir, e.name))
+        .filter((f) => /\.(jpg|jpeg|png|webp|avif)$/i.test(f));
+      return {
+        name: e.name,
+        images: files.map((f) =>
+          `/nail-categories/${encodeURIComponent(e.name)}/${encodeURIComponent(f)}`
+        ),
+      };
+    })
+    .filter((c) => c.images.length > 0);
+}
 
 const TESTIMONIALS = [
   { name: "Aanya S.", branch: "Bandra", text: "Booked in under a minute and my acrylics lasted weeks. The membership pays for itself!" },
@@ -39,6 +51,7 @@ const TESTIMONIALS = [
 
 export default async function HomePage() {
   const { services, timeSlots, branches, staff } = await getCatalog();
+  const nailCategories = getNailCategories();
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -149,28 +162,12 @@ export default async function HomePage() {
           <p className="mt-2 text-muted-foreground">A glimpse of recent sets from our studios.</p>
         </Reveal>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {GALLERY.map((label, i) => (
-            <Reveal key={label} delay={(i % 3) * 0.05}>
-              <div
-                className={`relative aspect-square rounded-2xl overflow-hidden shadow-soft grid place-items-center ${
-                  i % 2 === 0 ? "bg-gradient-hero" : "bg-linear-to-br from-accent to-secondary"
-                }`}
-              >
-                <Sparkles className={`h-8 w-8 ${i % 2 === 0 ? "text-primary-foreground/80" : "text-primary/70"}`} />
-                <span
-                  className={`absolute bottom-3 left-3 text-sm font-medium ${
-                    i % 2 === 0 ? "text-primary-foreground" : "text-foreground"
-                  }`}
-                >
-                  {label}
-                </span>
-              </div>
+          {nailCategories.map((cat, i) => (
+            <Reveal key={cat.name} delay={(i % 3) * 0.05}>
+              <NailCard name={cat.name} images={cat.images} />
             </Reveal>
           ))}
         </div>
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Placeholder tiles — swap in real studio photography for launch.
-        </p>
       </section>
 
       {/* Membership */}
