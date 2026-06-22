@@ -101,8 +101,8 @@ export function OverviewPanel() {
                   <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="mem" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--gold)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="var(--gold)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -117,7 +117,7 @@ export function OverviewPanel() {
                 }}
               />
               <Area type="monotone" dataKey="fees" name="Booking fees" stroke="var(--primary)" fill="url(#fees)" />
-              <Area type="monotone" dataKey="memberships" name="Memberships" stroke="var(--gold)" fill="url(#mem)" />
+              <Area type="monotone" dataKey="memberships" name="Memberships" stroke="var(--chart-2)" fill="url(#mem)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
