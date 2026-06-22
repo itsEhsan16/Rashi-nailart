@@ -391,6 +391,38 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_schedules: {
+        Row: {
+          created_at: string
+          day_of_week: number
+          id: string
+          staff_id: string
+          time_slot: string
+        }
+        Insert: {
+          created_at?: string
+          day_of_week: number
+          id?: string
+          staff_id: string
+          time_slot: string
+        }
+        Update: {
+          created_at?: string
+          day_of_week?: number
+          id?: string
+          staff_id?: string
+          time_slot?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_schedules_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

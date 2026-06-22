@@ -154,10 +154,34 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     };
   }, [branch, staffName, apptDate]);
 
-  const filteredStaff = useMemo(
-    () => (branch ? staff.filter((s) => s.branch === branch) : []),
-    [branch, staff],
+  const apptDow = apptDate ? apptDate.getDay() : null; // 0=Sun..6=Sat, local
+
+  // Stylists for the branch, narrowed to those who work the chosen weekday.
+  const filteredStaff = useMemo(() => {
+    if (!branch) return [];
+    const byBranch = staff.filter((s) => s.branch === branch);
+    if (apptDow === null) return byBranch; // no date yet → all branch stylists
+    return byBranch.filter((s) => (s.schedule[apptDow]?.length ?? 0) > 0);
+  }, [branch, staff, apptDow]);
+
+  // Slots the chosen stylist works on the chosen weekday (∩ active time slots).
+  const scheduledSlots = useMemo(() => {
+    if (apptDow === null || !staffName) return [] as string[];
+    return filteredStaff.find((s) => s.name === staffName)?.schedule[apptDow] ?? [];
+  }, [filteredStaff, staffName, apptDow]);
+  const availableSlots = useMemo(
+    () => timeSlots.filter((t) => scheduledSlots.includes(t)),
+    [timeSlots, scheduledSlots],
   );
+
+  // If the chosen stylist no longer matches the date's availability, reset it.
+  useEffect(() => {
+    if (staffName && !filteredStaff.some((s) => s.name === staffName)) {
+      setValue("staff_name", "");
+      setValue("time_slot", "");
+    }
+  }, [filteredStaff, staffName, setValue]);
+
   const selectedService = useMemo(
     () => services.find((s) => s.name === serviceName),
     [services, serviceName],
@@ -168,6 +192,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
       : null;
 
   const slotsReady = Boolean(branch && staffName && apptDate);
+  const noStylistsForDate = Boolean(branch && apptDate && filteredStaff.length === 0);
 
   async function onSubmit(values: BookingFormValues) {
     setSubmitting(true);
@@ -370,6 +395,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                       selected={field.value}
                       onSelect={(d) => {
                         field.onChange(d);
+                        setValue("staff_name", "");
                         setValue("time_slot", "");
                       }}
                       disabled={(d) => d < new Date(new Date().setHours(0, 0, 0, 0))}
@@ -405,7 +431,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                 <SelectContent>
                   {filteredStaff.length === 0 && (
                     <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                      No stylists for this branch
+                      {apptDate ? "No stylists available on this date" : "No stylists for this branch"}
                     </div>
                   )}
                   {filteredStaff.map((s) => (
@@ -417,6 +443,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
               </Select>
             )}
           />
+          {noStylistsForDate && (
+            <p className="text-sm text-muted-foreground">No slots available for this date.</p>
+          )}
           {errors.staff_name && (
             <p className="text-xs text-destructive">{errors.staff_name.message}</p>
           )}
@@ -439,7 +468,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                     />
                   </SelectTrigger>
                   <SelectContent>
-                    {timeSlots.map((t) => {
+                    {availableSlots.map((t) => {
                       const taken = bookedSlots.includes(t);
                       return (
                         <SelectItem key={t} value={t} disabled={taken}>

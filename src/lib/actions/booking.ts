@@ -71,6 +71,36 @@ export async function getBookedSlots(input: z.infer<typeof slotsInputSchema>) {
   return { slots: Array.from(new Set(rows.map((r) => r.time_slot))) };
 }
 
+/** True if (name+branch) is scheduled to work `timeSlot` on the weekday of isoDate. */
+async function staffWorksSlot(
+  admin: Admin,
+  branch: CreateBookingInput["branch"],
+  staffName: string,
+  isoDate: string,
+  timeSlot: string,
+): Promise<boolean> {
+  // getUTCDay on an explicit UTC-midnight string = the chosen calendar day's
+  // weekday, independent of server timezone. Matches the client's local getDay()
+  // because a fixed calendar date has the same weekday everywhere.
+  const dow = new Date(`${isoDate}T00:00:00Z`).getUTCDay(); // 0=Sun..6=Sat
+  const { data: staffRow } = await admin
+    .from("staff")
+    .select("id")
+    .eq("name", staffName)
+    .eq("branch", branch)
+    .maybeSingle();
+  const sid = (staffRow as { id: string } | null)?.id;
+  if (!sid) return false;
+  const { data } = await admin
+    .from("staff_schedules")
+    .select("id")
+    .eq("staff_id", sid)
+    .eq("day_of_week", dow)
+    .eq("time_slot", timeSlot)
+    .limit(1);
+  return ((data as { id: string }[] | null) ?? []).length > 0;
+}
+
 /** Authoritative price + nail-art flag from DB (falls back to constants pre-migration). */
 async function resolveService(
   admin: Admin,
@@ -106,6 +136,15 @@ export async function createBooking(input: CreateBookingInput) {
   }
   const d = parsed.data;
   const admin = createAdminClient();
+
+  // Availability guard: the stylist must be scheduled for this weekday + slot.
+  // Defends against stale/crafted submissions that bypass the form's filtering.
+  if (!(await staffWorksSlot(admin, d.branch, d.staff_name, d.appointment_date, d.time_slot))) {
+    return {
+      ok: false as const,
+      error: "That stylist isn't available at the selected time. Please pick another slot, date, or stylist.",
+    };
+  }
 
   const svc = await resolveService(admin, d.service);
   if (!svc) return { ok: false as const, error: "Selected service is unavailable" };
