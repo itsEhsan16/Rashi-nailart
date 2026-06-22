@@ -735,6 +735,91 @@ export async function removeStaff(input: { id: string }) {
   return { ok: true as const };
 }
 
+// ─────────────────────────── Staff schedules (weekly) ───────────────────────
+export type ScheduleEntry = { day_of_week: number; time_slot: string };
+
+const setScheduleInput = z.object({
+  staff_id: z.string().uuid(),
+  entries: z
+    .array(
+      z.object({
+        day_of_week: z.number().int().min(0).max(6),
+        time_slot: z.string().trim().min(1).max(50),
+      }),
+    )
+    .max(100),
+});
+
+/** admin → any stylist; manager → only stylists in their own branch. */
+async function staffInScope(admin: Admin, profile: AuthProfile, staffId: string): Promise<boolean> {
+  if (profile.role === "admin") return true;
+  const { data } = await admin.from("staff").select("branch").eq("id", staffId).maybeSingle();
+  const row = data as { branch: string } | null;
+  return !!row && profile.role === "manager" && row.branch === profile.branch;
+}
+
+/** Active time-slot labels for the schedule editor (admin + manager). */
+export async function getSchedulableSlots() {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, slots: [] as string[] };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("time_slots")
+    .select("label")
+    .eq("active", true)
+    .order("sort_order");
+  if (error) return { ok: false as const, error: error.message, slots: [] as string[] };
+  return { ok: true as const, slots: ((data as { label: string }[] | null) ?? []).map((r) => r.label) };
+}
+
+export async function getStaffSchedule(input: { staffId: string }) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, entries: [] as ScheduleEntry[] };
+  const parsed = z.object({ staffId: z.string().uuid() }).safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid id", entries: [] as ScheduleEntry[] };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.staffId)))
+    return { ...UNAUTHORIZED, entries: [] as ScheduleEntry[] };
+  const { data, error } = await admin
+    .from("staff_schedules")
+    .select("day_of_week, time_slot")
+    .eq("staff_id", parsed.data.staffId);
+  if (error) return { ok: false as const, error: error.message, entries: [] as ScheduleEntry[] };
+  return { ok: true as const, entries: (data as ScheduleEntry[] | null) ?? [] };
+}
+
+/** Replace a stylist's entire weekly schedule (delete-all then insert). */
+export async function setStaffSchedule(input: z.infer<typeof setScheduleInput>) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = setScheduleInput.safeParse(input);
+  if (!parsed.success)
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.staff_id))) return UNAUTHORIZED;
+
+  const seen = new Set<string>();
+  const rows = parsed.data.entries
+    .filter((e) => {
+      const k = `${e.day_of_week}|${e.time_slot}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .map((e) => ({ staff_id: parsed.data.staff_id, day_of_week: e.day_of_week, time_slot: e.time_slot }));
+
+  const { error: delErr } = await admin
+    .from("staff_schedules")
+    .delete()
+    .eq("staff_id", parsed.data.staff_id);
+  if (delErr) return { ok: false as const, error: delErr.message };
+  if (rows.length) {
+    const { error: insErr } = await admin.from("staff_schedules").insert(rows);
+    if (insErr) return { ok: false as const, error: insErr.message };
+  }
+  return { ok: true as const };
+}
+
 // ─────────────────────────────── Team (auth users) ──────────────────────────
 export type TeamRow = {
   id: string;
