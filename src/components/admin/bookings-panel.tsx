@@ -100,6 +100,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   const canFilter = role !== "staff";
   const canManage = role !== "staff";
   const showBranchFilter = role === "admin";
+  const showPhone = role !== "staff";
 
   const [rows, setRows] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -186,7 +187,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
     );
   }
 
-  const colSpan = 11;
+  const colSpan = showPhone ? 11 : 10;
 
   return (
     <div className="space-y-4">
@@ -283,7 +284,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Client</TableHead>
-                <TableHead>Phone</TableHead>
+                {showPhone && <TableHead>Phone</TableHead>}
                 <TableHead>Branch</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Time</TableHead>
@@ -324,7 +325,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>{r.phone}</TableCell>
+                  {showPhone && <TableCell>{r.phone}</TableCell>}
                   <TableCell>
                     <Badge variant="secondary">{r.branch}</Badge>
                   </TableCell>
@@ -402,7 +403,8 @@ export function BookingsPanel({ role }: { role: UserRole }) {
           <DialogHeader>
             <DialogTitle>Payment proof — {proofFor?.client_name}</DialogTitle>
             <DialogDescription>
-              ₹{proofFor?.amount} · {proofFor?.phone}
+              ₹{proofFor?.amount}
+              {showPhone && proofFor?.phone ? ` · ${proofFor.phone}` : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="min-h-[200px] grid place-items-center">

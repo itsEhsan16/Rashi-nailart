@@ -3,7 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { ArrowLeft, ShieldCheck, Building2, Scissors } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Building2, User } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -34,7 +34,7 @@ const CONFIG: Record<
   staff: {
     title: "Staff sign in",
     desc: "Stylist portal",
-    icon: <Scissors className="h-5 w-5" />,
+    icon: <User className="h-5 w-5" />,
     placeholder: "you@rashi.studio",
   },
 };

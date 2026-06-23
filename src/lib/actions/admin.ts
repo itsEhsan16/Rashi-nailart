@@ -81,7 +81,12 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
 
   const { data, error } = await q;
   if (error) return { ok: false as const, error: error.message, bookings: [] as BookingRow[] };
-  return { ok: true as const, bookings: (data as BookingRow[] | null) ?? [], role: profile.role };
+  let bookings = (data as BookingRow[] | null) ?? [];
+  // Staff must not see client phone numbers; redact before sending to the client.
+  if (profile.role === "staff") {
+    bookings = bookings.map((b) => ({ ...b, phone: "" }));
+  }
+  return { ok: true as const, bookings, role: profile.role };
 }
 
 const idSchema = z.object({ id: z.string().uuid() });
