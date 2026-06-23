@@ -83,9 +83,9 @@ export default async function HomePage() {
 
       {/* Header */}
       <header className="border-b border-border/50 bg-background/60 backdrop-blur-md sticky top-0 z-40">
-        <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
+        <div className="mx-auto max-w-6xl px-6 py-2.5 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <Logo priority className="h-11 w-auto" />
+            <Logo priority className="h-14 w-auto" />
           </Link>
           <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#services" className="hover:text-foreground transition-colors">Services</a>
@@ -110,7 +110,7 @@ export default async function HomePage() {
             {branches.map((b) => b.name).join("  ·  ")}
           </span>
           <h1 className="mt-6 font-display text-5xl md:text-6xl font-semibold tracking-tight">
-            Book your <span className="text-primary">salon</span> moment
+            Book your <span className="text-primary">Nails studio</span> moment
           </h1>
           <p className="mt-4 text-muted-foreground max-w-xl mx-auto">
             Premium nails, gel polish &amp; extensions — reserved in under a minute,
