@@ -217,6 +217,13 @@ export type PaymentSettings = {
   qrUrl: string;
 };
 
+/** Resolve the QR image, treating blanks and the old SVG placeholder as unset. */
+function normalizeQrUrl(value: string | null | undefined): string {
+  const v = (value ?? "").trim();
+  if (!v || v === "/upi-qr.svg") return "/QR.png";
+  return v;
+}
+
 export async function getPaymentSettings(): Promise<PaymentSettings> {
   const admin = createAdminClient();
   const { data } = await admin
@@ -228,7 +235,7 @@ export async function getPaymentSettings(): Promise<PaymentSettings> {
   return {
     upiId: row?.upi_id ?? "",
     payeeName: row?.payee_name ?? "Rashi Nail Art Studio",
-    qrUrl: row?.upi_qr_url || "/upi-qr.svg",
+    qrUrl: normalizeQrUrl(row?.upi_qr_url),
   };
 }
 

@@ -36,10 +36,12 @@ import { BRANCHES } from "@/lib/salon-data";
 import type { UserRole } from "@/lib/auth";
 import {
   listTeam,
+  listStaffManage,
   createTeamMember,
   resetTeamPassword,
   deleteTeamMember,
   type TeamRow,
+  type StaffRow,
 } from "@/lib/actions/admin";
 
 type BranchName = (typeof BRANCHES)[number];
@@ -47,6 +49,7 @@ type BranchName = (typeof BRANCHES)[number];
 export function TeamPanel({ role, branch }: { role: UserRole; branch: string | null }) {
   const isAdmin = role === "admin";
   const [rows, setRows] = useState<TeamRow[]>([]);
+  const [stylists, setStylists] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -61,23 +64,39 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await listTeam();
+    const [teamRes, staffRes] = await Promise.all([listTeam(), listStaffManage()]);
     setLoading(false);
-    if (res.ok) setRows(res.team);
-    else toast.error(res.error);
+    if (teamRes.ok) setRows(teamRes.team);
+    else toast.error(teamRes.error);
+    if (staffRes.ok) setStylists(staffRes.staff);
+    else toast.error(staffRes.error);
   }, []);
   useEffect(() => {
     void load();
   }, [load]);
 
+  // The stylist dropdown is the booking-match key, so it's scoped to the chosen
+  // branch and only applies to staff logins (managers are matched by branch).
+  const effectiveRole = isAdmin ? form.role : "staff";
+  const effectiveBranch = isAdmin ? form.branch : branch ?? "";
+  const branchStylists = stylists.filter((s) => s.branch === effectiveBranch);
+  const takenNames = new Set(
+    rows
+      .filter((r) => r.role === "staff" && r.staff_name)
+      .map((r) => `${r.branch ?? ""}|${r.staff_name!.toLowerCase()}`),
+  );
+
   async function onCreate() {
+    if (effectiveRole === "staff" && !form.staff_name) {
+      return toast.error("Choose the stylist this login belongs to.");
+    }
     setSaving(true);
     const res = await createTeamMember({
       email: form.email.trim(),
       password: form.password,
       full_name: form.full_name.trim(),
-      staff_name: form.staff_name.trim() || form.full_name.trim(),
-      role: isAdmin ? form.role : "staff",
+      staff_name: effectiveRole === "staff" ? form.staff_name : form.full_name.trim() || form.staff_name,
+      role: effectiveRole,
       branch: (branch ?? form.branch) as BranchName,
     });
     setSaving(false);
@@ -125,31 +144,19 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
                   <Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Stylist name (for bookings)</Label>
-                  <Input
-                    value={form.staff_name}
-                    onChange={(e) => setForm({ ...form, staff_name: e.target.value })}
-                    placeholder="matches the stylist list"
-                  />
+                  <Label>Email</Label>
+                  <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Email</Label>
-                <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-              </div>
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Temporary password</Label>
-                  <Input
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    placeholder="min 8 characters"
-                  />
-                </div>
-                {isAdmin && (
+
+              {isAdmin && (
+                <div className="grid sm:grid-cols-2 gap-3">
                   <div className="space-y-1.5">
                     <Label>Role</Label>
-                    <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as "manager" | "staff" })}>
+                    <Select
+                      value={form.role}
+                      onValueChange={(v) => setForm({ ...form, role: v as "manager" | "staff", staff_name: "" })}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -159,25 +166,70 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
                       </SelectContent>
                     </Select>
                   </div>
-                )}
-              </div>
-              {isAdmin && (
-                <div className="space-y-1.5">
-                  <Label>Branch</Label>
-                  <Select value={form.branch} onValueChange={(v) => setForm({ ...form, branch: v })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Choose branch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {BRANCHES.map((b) => (
-                        <SelectItem key={b} value={b}>
-                          {b}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1.5">
+                    <Label>Branch</Label>
+                    <Select
+                      value={form.branch}
+                      onValueChange={(v) => setForm({ ...form, branch: v, staff_name: "" })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Choose branch" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {BRANCHES.map((b) => (
+                          <SelectItem key={b} value={b}>
+                            {b}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               )}
+
+              {effectiveRole === "staff" && (
+                <div className="space-y-1.5">
+                  <Label>Stylist (for bookings)</Label>
+                  <Select
+                    value={form.staff_name}
+                    onValueChange={(v) => setForm({ ...form, staff_name: v })}
+                    disabled={!effectiveBranch}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={effectiveBranch ? "Choose stylist" : "Pick a branch first"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {branchStylists.length === 0 && (
+                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                          No stylists in {effectiveBranch || "this branch"}. Add one under Manage → Stylists.
+                        </div>
+                      )}
+                      {branchStylists.map((s) => {
+                        const taken = takenNames.has(`${effectiveBranch}|${s.name.toLowerCase()}`);
+                        return (
+                          <SelectItem key={s.id} value={s.name} disabled={taken}>
+                            {s.name}
+                            {taken ? " · has login" : ""}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Links this login to a stylist so their dashboard shows their bookings.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Temporary password</Label>
+                <Input
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  placeholder="min 8 characters"
+                />
+              </div>
+
               {!isAdmin && (
                 <p className="text-xs text-muted-foreground">
                   New staff will be added to your branch ({branch}).
