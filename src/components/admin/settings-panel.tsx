@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
-import { Loader2, Save } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Loader2, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,18 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getAppSettings, saveAppSettings, type AppSettings } from "@/lib/actions/admin";
+import {
+  getAppSettings,
+  saveAppSettings,
+  uploadQrImage,
+  type AppSettings,
+} from "@/lib/actions/admin";
 
 export function SettingsPanel() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<AppSettings>({
     upi_id: "",
     payee_name: "",
@@ -36,6 +43,21 @@ export function SettingsPanel() {
     setSaving(false);
     if (!res.ok) return toast.error(res.error);
     toast.success("Payment settings saved");
+  }
+
+  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const data = new FormData();
+    data.append("file", file);
+    setUploading(true);
+    const res = await uploadQrImage(data);
+    setUploading(false);
+    if (fileRef.current) fileRef.current.value = "";
+    if (!res.ok) return toast.error(res.error);
+    if (!res.url) return toast.error("Upload failed");
+    setForm((f) => ({ ...f, upi_qr_url: res.url! }));
+    toast.success("QR image uploaded");
   }
 
   if (loading) return <Skeleton className="h-80 rounded-xl" />;
@@ -70,15 +92,39 @@ export function SettingsPanel() {
       </div>
 
       <div className="space-y-1.5">
-        <Label htmlFor="upi_qr_url">QR image URL</Label>
-        <Input
-          id="upi_qr_url"
-          placeholder="/QR.png or https://…"
-          value={form.upi_qr_url}
-          onChange={(e) => setForm((f) => ({ ...f, upi_qr_url: e.target.value }))}
-        />
+        <Label htmlFor="upi_qr_url">QR image</Label>
+        <div className="flex gap-2">
+          <Input
+            id="upi_qr_url"
+            placeholder="/QR.png or https://…"
+            value={form.upi_qr_url}
+            onChange={(e) => setForm((f) => ({ ...f, upi_qr_url: e.target.value }))}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={uploading}
+            onClick={() => fileRef.current?.click()}
+            className="shrink-0"
+          >
+            {uploading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
+            Upload
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/heic"
+            className="hidden"
+            onChange={onUpload}
+          />
+        </div>
         <p className="text-xs text-muted-foreground">
-          Use a path under <code>/public</code> (e.g. <code>/QR.png</code>) or a full https URL.
+          Upload an image (PNG/JPG/WebP, max 5 MB) or paste a path under <code>/public</code> (e.g.{" "}
+          <code>/QR.png</code>) or a full https URL. Uploading saves immediately.
         </p>
       </div>
 
