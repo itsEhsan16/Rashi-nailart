@@ -26,7 +26,7 @@ export function validateProofFile(value: FormDataEntryValue | null): ProofValida
   const file = value;
   if (file.size === 0) return { ok: false, error: "The uploaded file is empty." };
   if (file.size > MAX_PROOF_BYTES) {
-    return { ok: false, error: "Image is too large (max 5 MB)." };
+    return { ok: false, error: "Image is too large (max 10 MB)." };
   }
   if (!(ALLOWED_PROOF_TYPES as readonly string[]).includes(file.type)) {
     return { ok: false, error: "Only JPG, PNG, WebP or HEIC images are allowed." };

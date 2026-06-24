@@ -1,6 +1,14 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // Payment-proof screenshots are validated up to 10 MB (MAX_PROOF_BYTES);
+    // the Server Action default body limit is 1 MB, which silently throws on
+    // larger phone screenshots. Headroom above 10 MB covers the multipart framing.
+    serverActions: {
+      bodySizeLimit: "12mb",
+    },
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com" },

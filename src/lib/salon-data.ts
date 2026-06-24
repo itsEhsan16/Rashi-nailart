@@ -45,7 +45,7 @@ export const SLOT_HOLDING_STATUSES: readonly BookingStatus[] = [
 ];
 
 /** Max upload size for a payment screenshot. */
-export const MAX_PROOF_BYTES = 5 * 1024 * 1024; // 5 MB
+export const MAX_PROOF_BYTES = 10 * 1024 * 1024; // 10 MB
 export const ALLOWED_PROOF_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"] as const;
 
 /** Abandoned pending_payment holds older than this are reclaimable. */
