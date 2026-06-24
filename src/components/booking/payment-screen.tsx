@@ -68,7 +68,7 @@ export function PaymentScreen({
       return;
     }
     if (f.size > MAX_PROOF_BYTES) {
-      toast.error("Image is too large (max 5 MB).");
+      toast.error("Image is too large (max 10 MB).");
       e.target.value = "";
       return;
     }
@@ -112,13 +112,13 @@ export function PaymentScreen({
 
       <div className="grid gap-6 md:grid-cols-2 md:items-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="rounded-xl border border-border/60 bg-white p-3">
+          <div className="rounded-xl border border-border/60 bg-white p-4">
             <Image
               src={settings.qrUrl}
               alt="UPI QR code"
-              width={208}
-              height={208}
-              className="h-52 w-52 object-contain"
+              width={320}
+              height={320}
+              className="h-64 w-64 object-contain sm:h-72 sm:w-72"
               unoptimized
             />
           </div>
@@ -169,7 +169,7 @@ export function PaymentScreen({
             <Upload className="mr-2 h-4 w-4" /> Choose image
           </Button>
           <span className="text-sm text-muted-foreground">
-            {file ? file.name : "JPG, PNG, WebP or HEIC · max 5 MB"}
+            {file ? file.name : "JPG, PNG, WebP or HEIC · max 10 MB"}
           </span>
         </div>
 

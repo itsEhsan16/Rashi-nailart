@@ -123,7 +123,7 @@ export function SettingsPanel() {
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Upload an image (PNG/JPG/WebP, max 5 MB) or paste a path under <code>/public</code> (e.g.{" "}
+          Upload an image (PNG/JPG/WebP, max 10 MB) or paste a path under <code>/public</code> (e.g.{" "}
           <code>/QR.png</code>) or a full https URL. Uploading saves immediately.
         </p>
       </div>

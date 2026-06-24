@@ -449,7 +449,7 @@ export async function uploadQrImage(formData: FormData) {
   const file = value;
   if (file.size === 0) return { ok: false as const, error: "The selected file is empty.", url: null };
   if (file.size > MAX_PROOF_BYTES) {
-    return { ok: false as const, error: "Image is too large (max 5 MB).", url: null };
+    return { ok: false as const, error: "Image is too large (max 10 MB).", url: null };
   }
   if (!(ALLOWED_PROOF_TYPES as readonly string[]).includes(file.type)) {
     return { ok: false as const, error: "Only JPG, PNG, WebP or HEIC images are allowed.", url: null };
