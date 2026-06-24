@@ -396,7 +396,7 @@ export async function getAppSettings() {
   const settings = (data as AppSettings | null) ?? {
     upi_id: "",
     payee_name: "Rashi Nail Art Studio",
-    upi_qr_url: "/upi-qr.svg",
+    upi_qr_url: "/QR.png",
   };
   return { ok: true as const, settings };
 }
@@ -404,7 +404,11 @@ export async function getAppSettings() {
 const settingsInput = z.object({
   upi_id: z.string().trim().max(120),
   payee_name: z.string().trim().min(1).max(120),
-  upi_qr_url: z.string().trim().min(1).max(500),
+  upi_qr_url: z
+    .string()
+    .trim()
+    .max(500)
+    .transform((v) => v || "/QR.png"),
 });
 
 export async function saveAppSettings(input: z.infer<typeof settingsInput>) {
@@ -869,6 +873,29 @@ export async function createTeamMember(input: z.infer<typeof createTeamInput>) {
     if (c.branch !== profile.branch) return { ok: false as const, error: "Out of your branch scope" };
   }
   const admin = createAdminClient();
+
+  // Staff dashboards match bookings by exact roster name (see listBookings).
+  // Force a staff login's staff_name to an existing stylist in that branch and
+  // store the canonical spelling, so the dashboard can never come up empty from
+  // a typo or full-name mismatch. Managers aren't name-matched, so skip them.
+  let staffName = c.staff_name;
+  if (c.role === "staff") {
+    const { data: rosterRow } = await admin
+      .from("staff")
+      .select("name")
+      .eq("branch", c.branch)
+      .ilike("name", c.staff_name)
+      .maybeSingle();
+    const canonical = (rosterRow as { name: string } | null)?.name;
+    if (!canonical) {
+      return {
+        ok: false as const,
+        error: "Pick a stylist from the branch roster (add them under Manage → Stylists first).",
+      };
+    }
+    staffName = canonical;
+  }
+
   const { error } = await admin.auth.admin.createUser({
     email: c.email,
     password: c.password,
@@ -876,7 +903,7 @@ export async function createTeamMember(input: z.infer<typeof createTeamInput>) {
     user_metadata: {
       role: c.role,
       full_name: c.full_name,
-      staff_name: c.staff_name,
+      staff_name: staffName,
       branch: c.branch,
     },
   });

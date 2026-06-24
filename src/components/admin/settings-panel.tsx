@@ -73,12 +73,12 @@ export function SettingsPanel() {
         <Label htmlFor="upi_qr_url">QR image URL</Label>
         <Input
           id="upi_qr_url"
-          placeholder="/upi-qr.svg or https://…"
+          placeholder="/QR.png or https://…"
           value={form.upi_qr_url}
           onChange={(e) => setForm((f) => ({ ...f, upi_qr_url: e.target.value }))}
         />
         <p className="text-xs text-muted-foreground">
-          Use a path under <code>/public</code> (e.g. <code>/upi-qr.png</code>) or a full https URL.
+          Use a path under <code>/public</code> (e.g. <code>/QR.png</code>) or a full https URL.
         </p>
       </div>
 
