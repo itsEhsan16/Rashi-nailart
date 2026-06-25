@@ -8,13 +8,33 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import {
-  ALLOWED_PROOF_TYPES,
-  MAX_PROOF_BYTES,
-} from "@/lib/salon-data";
+import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
 import type { PaymentSettings } from "@/lib/actions/booking";
 
 type UploadResult = { ok: true } | { ok: false; error?: string };
+
+/** Turn an upload exception into a specific, actionable message for the customer. */
+function describeUploadError(err: unknown): string {
+  const msg = (err instanceof Error ? err.message : String(err ?? "")).toLowerCase();
+  if (
+    msg.includes("body exceeded") ||
+    msg.includes("content too large") ||
+    msg.includes("payload too large") ||
+    msg.includes("413")
+  ) {
+    return "That image is too large to upload. Please choose one under 10 MB.";
+  }
+  if (
+    err instanceof TypeError ||
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("network request failed") ||
+    msg.includes("load failed")
+  ) {
+    return "Network problem — please check your connection and try again.";
+  }
+  return "Something went wrong uploading your screenshot. Please try again.";
+}
 
 type Props = {
   /** The record id this proof belongs to (appointment id or payment id). */
@@ -62,13 +82,14 @@ export function PaymentScreen({
       setFile(null);
       return;
     }
-    if (!(ALLOWED_PROOF_TYPES as readonly string[]).includes(f.type)) {
-      toast.error("Only JPG, PNG, WebP or HEIC images are allowed.");
+    if (!isAcceptedProofFile(f)) {
+      toast.error("Please choose a JPG, PNG, WebP or HEIC image.");
       e.target.value = "";
       return;
     }
     if (f.size > MAX_PROOF_BYTES) {
-      toast.error("Image is too large (max 10 MB).");
+      const mb = (f.size / (1024 * 1024)).toFixed(1);
+      toast.error(`That image is ${mb} MB — please choose one under 10 MB.`);
       e.target.value = "";
       return;
     }
@@ -91,8 +112,8 @@ export function PaymentScreen({
         return;
       }
       onUploaded();
-    } catch {
-      toast.error("Something went wrong uploading your screenshot.");
+    } catch (err) {
+      toast.error(describeUploadError(err));
     } finally {
       setSubmitting(false);
     }

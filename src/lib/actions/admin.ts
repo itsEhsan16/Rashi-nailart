@@ -4,8 +4,13 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile, type AuthProfile, type UserRole } from "@/lib/auth";
 import { BRANCHES_TUPLE } from "@/lib/validations/booking";
-import { signedProofUrl } from "@/lib/payment-proofs";
-import { ALLOWED_PROOF_TYPES, MAX_PROOF_BYTES } from "@/lib/salon-data";
+import {
+  describeStorageError,
+  prepareImageForStorage,
+  pruneSiblings,
+  signedProofUrl,
+} from "@/lib/payment-proofs";
+import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
 import { fulfillMembershipPayment, type MembershipPayment } from "@/lib/payments-core";
 import { notifyCustomer } from "@/lib/notify";
 
@@ -427,12 +432,6 @@ export async function saveAppSettings(input: z.infer<typeof settingsInput>) {
 }
 
 const QR_BUCKET = "app-assets";
-const QR_EXT_BY_TYPE: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-  "image/heic": "heic",
-};
 
 /**
  * Upload a QR image to the public app-assets bucket and persist its public URL
@@ -451,19 +450,24 @@ export async function uploadQrImage(formData: FormData) {
   if (file.size > MAX_PROOF_BYTES) {
     return { ok: false as const, error: "Image is too large (max 10 MB).", url: null };
   }
-  if (!(ALLOWED_PROOF_TYPES as readonly string[]).includes(file.type)) {
+  if (!isAcceptedProofFile(file)) {
     return { ok: false as const, error: "Only JPG, PNG, WebP or HEIC images are allowed.", url: null };
   }
 
+  // HEIC QR images are transcoded to JPEG so they render for customers.
+  const prepared = await prepareImageForStorage(file);
+  if (!prepared.ok) return { ok: false as const, error: prepared.error, url: null };
+
   const admin = createAdminClient();
-  const ext = QR_EXT_BY_TYPE[file.type] ?? "img";
-  const path = `upi-qr/qr.${ext}`;
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const { error: upErr } = await admin.storage.from(QR_BUCKET).upload(path, buffer, {
-    contentType: file.type,
+  const path = `upi-qr/qr.${prepared.image.ext}`;
+  const { error: upErr } = await admin.storage.from(QR_BUCKET).upload(path, prepared.image.buffer, {
+    contentType: prepared.image.contentType,
     upsert: true,
   });
-  if (upErr) return { ok: false as const, error: upErr.message, url: null };
+  if (upErr) return { ok: false as const, error: describeStorageError(upErr.message), url: null };
+
+  // Drop a superseded QR object (e.g. qr.png replaced by a HEIC -> qr.jpg).
+  await pruneSiblings(admin, QR_BUCKET, "upi-qr", `qr.${prepared.image.ext}`);
 
   const { data: pub } = admin.storage.from(QR_BUCKET).getPublicUrl(path);
   // Cache-bust so the new image shows immediately at the reused path.
