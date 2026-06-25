@@ -46,7 +46,28 @@ export const SLOT_HOLDING_STATUSES: readonly BookingStatus[] = [
 
 /** Max upload size for a payment screenshot. */
 export const MAX_PROOF_BYTES = 10 * 1024 * 1024; // 10 MB
-export const ALLOWED_PROOF_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"] as const;
+export const ALLOWED_PROOF_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+] as const;
+
+/**
+ * True if an uploaded file is an accepted payment-proof image. Matches by MIME
+ * type, but also accepts HEIC/HEIF by file extension because some browsers
+ * report no MIME type for those (iPhone photos); they're transcoded to JPEG
+ * server-side on upload.
+ */
+export function isAcceptedProofFile(file: { type: string; name: string }): boolean {
+  const type = file.type.toLowerCase();
+  if ((ALLOWED_PROOF_TYPES as readonly string[]).includes(type)) return true;
+  if ((type === "" || type === "application/octet-stream") && /\.(heic|heif)$/i.test(file.name)) {
+    return true;
+  }
+  return false;
+}
 
 /** Abandoned pending_payment holds older than this are reclaimable. */
 export const PENDING_HOLD_MINUTES = 30;

@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // heic-convert bundles a large WASM HEIF decoder; keep it as a runtime
+  // require instead of bundling it into the Server Action.
+  serverExternalPackages: ["heic-convert"],
   experimental: {
     // Payment-proof screenshots are validated up to 10 MB (MAX_PROOF_BYTES);
     // the Server Action default body limit is 1 MB, which silently throws on
