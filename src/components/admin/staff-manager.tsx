@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { UserPlus, Trash2, CalendarDays, Save, Loader2 } from "lucide-react";
+import { UserPlus, Trash2, CalendarDays, Save, Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import { BRANCHES } from "@/lib/salon-data";
 import {
   listStaffManage,
   addStaff,
+  updateStaff,
   removeStaff,
   getStaffSchedule,
   setStaffSchedule,
@@ -45,8 +46,14 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [name, setName] = useState("");
+  const [storeNumber, setStoreNumber] = useState("");
   const [branch, setBranch] = useState<string>(lockedBranch ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Edit-store-number dialog
+  const [editStaff, setEditStaff] = useState<StaffRow | null>(null);
+  const [editStoreNumber, setEditStoreNumber] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   // Schedule editor
   const [schedOpen, setSchedOpen] = useState(false);
@@ -75,12 +82,36 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
       return;
     }
     setSaving(true);
-    const res = await addStaff({ name: name.trim(), branch: b as BranchName });
+    const res = await addStaff({
+      name: name.trim(),
+      branch: b as BranchName,
+      store_number: storeNumber.trim() || null,
+    });
     setSaving(false);
     if (!res.ok) return toast.error(res.error);
     toast.success("Stylist added");
     setName("");
+    setStoreNumber("");
     if (!lockedBranch) setBranch("");
+    void load();
+  }
+
+  function openEdit(s: StaffRow) {
+    setEditStaff(s);
+    setEditStoreNumber(s.store_number ?? "");
+  }
+
+  async function saveEdit() {
+    if (!editStaff) return;
+    setEditSaving(true);
+    const res = await updateStaff({
+      id: editStaff.id,
+      store_number: editStoreNumber.trim() || null,
+    });
+    setEditSaving(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success("Store number updated");
+    setEditStaff(null);
     void load();
   }
 
@@ -169,6 +200,14 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
           <Label className="text-xs">Name</Label>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Stylist name" />
         </div>
+        <div className="space-y-1.5 min-w-40">
+          <Label className="text-xs">Store number</Label>
+          <Input
+            value={storeNumber}
+            onChange={(e) => setStoreNumber(e.target.value)}
+            placeholder="Optional"
+          />
+        </div>
         {!lockedBranch && (
           <div className="space-y-1.5">
             <Label className="text-xs">Branch</Label>
@@ -206,11 +245,23 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
             key={s.id}
             className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className="font-medium">{s.name}</span>
               <Badge variant="secondary">{s.branch}</Badge>
+              {s.store_number && (
+                <span className="text-xs text-muted-foreground">Store: {s.store_number}</span>
+              )}
             </div>
             <div className="flex items-center gap-1">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                title="Edit store number"
+                onClick={() => openEdit(s)}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
               <Button
                 size="icon"
                 variant="ghost"
@@ -305,6 +356,42 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
               ) : (
                 <>
                   <Save className="mr-1 h-4 w-4" /> Save schedule
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editStaff} onOpenChange={(o) => !o && setEditStaff(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Store number{editStaff ? ` · ${editStaff.name}` : ""}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Store number</Label>
+            <Input
+              value={editStoreNumber}
+              onChange={(e) => setEditStoreNumber(e.target.value)}
+              placeholder="Shown to customers who pick this stylist"
+            />
+            <p className="text-xs text-muted-foreground">
+              Leave blank to remove it. Customers see this once they select this stylist.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={saveEdit}
+              disabled={editSaving}
+              className="bg-gradient-hero text-primary-foreground"
+            >
+              {editSaving ? (
+                <>
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Saving…
+                </>
+              ) : (
+                <>
+                  <Save className="mr-1 h-4 w-4" /> Save
                 </>
               )}
             </Button>

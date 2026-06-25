@@ -60,6 +60,8 @@ export async function getBookedSlots(input: z.infer<typeof slotsInputSchema>) {
   const parsed = slotsInputSchema.safeParse(input);
   if (!parsed.success) return { slots: [] as string[] };
   const admin = createAdminClient();
+  // Drop abandoned no-proof holds first so they don't show the slot as taken.
+  await sweepStalePendingHolds();
   const { data } = await admin
     .from("appointments")
     .select("time_slot")
@@ -290,5 +292,23 @@ export async function cancelPendingBooking(input: { appointmentId: string }) {
     .delete()
     .eq("id", parsed.data.appointmentId)
     .eq("payment_status", "pending_payment");
+  return { ok: true as const };
+}
+
+/**
+ * Global reclaim of abandoned, never-proven holds: delete every `pending_payment`
+ * row older than the hold window. This is the guaranteed cleanup (the same-slot
+ * reclaim in createBooking only fires when someone rebooks that exact slot), so
+ * an abandoned booking never lingers as a phantom that occupies a slot or shows
+ * up in the dashboards. payment_uploaded/verified holds are never touched.
+ */
+export async function sweepStalePendingHolds() {
+  const admin = createAdminClient();
+  const staleCutoff = new Date(Date.now() - PENDING_HOLD_MINUTES * 60 * 1000).toISOString();
+  await admin
+    .from("appointments")
+    .delete()
+    .eq("payment_status", "pending_payment")
+    .lt("created_at", staleCutoff);
   return { ok: true as const };
 }

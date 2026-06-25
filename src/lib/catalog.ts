@@ -5,7 +5,12 @@ import { SERVICES, TIME_SLOTS, BRANCHES } from "@/lib/salon-data";
 export type ServiceOption = { name: string; price: number; isNailArt: boolean };
 export type BranchOption = { name: string; address: string | null };
 /** schedule[weekday] = slot labels this stylist works that weekday (0=Sun..6=Sat). */
-export type StaffOption = { name: string; branch: string; schedule: Record<number, string[]> };
+export type StaffOption = {
+  name: string;
+  branch: string;
+  storeNumber: string | null;
+  schedule: Record<number, string[]>;
+};
 
 export type Catalog = {
   services: ServiceOption[];
@@ -46,7 +51,7 @@ export async function getCatalog(): Promise<Catalog> {
         .order("sort_order"),
       supabase
         .from("staff")
-        .select("name, branch, staff_schedules(day_of_week, time_slot)")
+        .select("name, branch, store_number, staff_schedules(day_of_week, time_slot)")
         .order("name"),
     ]);
 
@@ -56,7 +61,12 @@ export async function getCatalog(): Promise<Catalog> {
     const brRows = (brRes.data as { name: string; address: string | null }[] | null) ?? [];
     const staffRows =
       (staffRes.data as
-        | { name: string; branch: string; staff_schedules: { day_of_week: number; time_slot: string }[] | null }[]
+        | {
+            name: string;
+            branch: string;
+            store_number: string | null;
+            staff_schedules: { day_of_week: number; time_slot: string }[] | null;
+          }[]
         | null) ?? [];
 
     const fb = fallback();
@@ -72,7 +82,7 @@ export async function getCatalog(): Promise<Catalog> {
       staff: staffRows.map((s) => {
         const schedule: Record<number, string[]> = {};
         for (const r of s.staff_schedules ?? []) (schedule[r.day_of_week] ??= []).push(r.time_slot);
-        return { name: s.name, branch: s.branch, schedule };
+        return { name: s.name, branch: s.branch, storeNumber: s.store_number, schedule };
       }),
     };
   } catch {

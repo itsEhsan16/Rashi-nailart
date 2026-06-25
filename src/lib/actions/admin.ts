@@ -12,6 +12,7 @@ import {
 } from "@/lib/payment-proofs";
 import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
 import { fulfillMembershipPayment, type MembershipPayment } from "@/lib/payments-core";
+import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { notifyCustomer } from "@/lib/notify";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -46,6 +47,8 @@ export type BookingRow = {
   discount_applied: number;
   completed: boolean;
   created_at: string;
+  /** Sum of staff-added extra line items (₹). Computed, not an appointments column. */
+  extras_total: number;
 };
 
 const BOOKING_COLUMNS =
@@ -67,6 +70,9 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
   const f = filtersSchema.safeParse(input).data ?? {};
   const admin = createAdminClient();
 
+  // Clear out abandoned, never-proven holds so they don't surface as bookings.
+  await sweepStalePendingHolds();
+
   let q = admin
     .from("appointments")
     .select(BOOKING_COLUMNS)
@@ -84,10 +90,30 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
   if (f.staff) q = q.ilike("staff_name", `%${f.staff}%`);
   if (f.status === "completed") q = q.eq("completed", true);
   else if (f.status) q = q.eq("payment_status", f.status);
+  // Un-proven holds aren't real bookings — hide them unless explicitly requested.
+  if (f.status !== "pending_payment") q = q.neq("payment_status", "pending_payment");
 
   const { data, error } = await q;
   if (error) return { ok: false as const, error: error.message, bookings: [] as BookingRow[] };
-  let bookings = (data as BookingRow[] | null) ?? [];
+  let bookings = ((data as Omit<BookingRow, "extras_total">[] | null) ?? []).map((b) => ({
+    ...b,
+    extras_total: 0,
+  })) as BookingRow[];
+
+  // Attach each booking's extras total in one batched query (avoids N+1).
+  if (bookings.length) {
+    const ids = bookings.map((b) => b.id);
+    const { data: exData } = await admin
+      .from("appointment_extras")
+      .select("appointment_id, amount")
+      .in("appointment_id", ids);
+    const totals = new Map<string, number>();
+    for (const e of (exData as { appointment_id: string; amount: number }[] | null) ?? []) {
+      totals.set(e.appointment_id, (totals.get(e.appointment_id) ?? 0) + (e.amount ?? 0));
+    }
+    bookings = bookings.map((b) => ({ ...b, extras_total: totals.get(b.id) ?? 0 }));
+  }
+
   // Staff must not see client phone numbers; redact before sending to the client.
   if (profile.role === "staff") {
     bookings = bookings.map((b) => ({ ...b, phone: "" }));
@@ -149,6 +175,69 @@ export async function deleteBooking(input: { id: string }) {
   const admin = createAdminClient();
   if (!(await scopedAppointmentMatch(admin, profile, parsed.data.id))) return UNAUTHORIZED;
   const { error } = await admin.from("appointments").delete().eq("id", parsed.data.id);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+// ───────────────────── Appointment extras (in-studio add-ons) ────────────────
+export type ExtraRow = { id: string; label: string; amount: number; created_at: string };
+
+const addExtraInput = z.object({
+  appointmentId: z.string().uuid(),
+  label: z.string().trim().min(1, "Describe the extra").max(100),
+  amount: z.coerce.number().int("Whole rupees only").min(0).max(100000),
+});
+
+/** Staff/manager/admin add an extra line item to a booking they're scoped to. */
+export async function addAppointmentExtra(input: z.infer<typeof addExtraInput>) {
+  const profile = await requireRole(["admin", "manager", "staff"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = addExtraInput.safeParse(input);
+  if (!parsed.success)
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  if (!(await scopedAppointmentMatch(admin, profile, parsed.data.appointmentId))) return UNAUTHORIZED;
+  const { error } = await admin.from("appointment_extras").insert({
+    appointment_id: parsed.data.appointmentId,
+    label: parsed.data.label,
+    amount: parsed.data.amount,
+    created_by: profile.id,
+  });
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+export async function listAppointmentExtras(input: { appointmentId: string }) {
+  const profile = await requireRole(["admin", "manager", "staff"]);
+  if (!profile) return { ...UNAUTHORIZED, extras: [] as ExtraRow[] };
+  const parsed = z.object({ appointmentId: z.string().uuid() }).safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid id", extras: [] as ExtraRow[] };
+  const admin = createAdminClient();
+  if (!(await scopedAppointmentMatch(admin, profile, parsed.data.appointmentId)))
+    return { ...UNAUTHORIZED, extras: [] as ExtraRow[] };
+  const { data, error } = await admin
+    .from("appointment_extras")
+    .select("id, label, amount, created_at")
+    .eq("appointment_id", parsed.data.appointmentId)
+    .order("created_at");
+  if (error) return { ok: false as const, error: error.message, extras: [] as ExtraRow[] };
+  return { ok: true as const, extras: (data as ExtraRow[] | null) ?? [] };
+}
+
+export async function deleteAppointmentExtra(input: { id: string; appointmentId: string }) {
+  const profile = await requireRole(["admin", "manager", "staff"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = z
+    .object({ id: z.string().uuid(), appointmentId: z.string().uuid() })
+    .safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid" };
+  const admin = createAdminClient();
+  if (!(await scopedAppointmentMatch(admin, profile, parsed.data.appointmentId))) return UNAUTHORIZED;
+  const { error } = await admin
+    .from("appointment_extras")
+    .delete()
+    .eq("id", parsed.data.id)
+    .eq("appointment_id", parsed.data.appointmentId); // bind delete to the authorized parent
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
 }
@@ -492,6 +581,8 @@ export type Overview = {
   bookingsWeek: number;
   bookingsMonth: number;
   activeMembers: number;
+  completedSessions: number;
+  pendingSessions: number;
   revenueByDay: { date: string; fees: number; memberships: number }[];
   bookingsByBranch: { branch: string; count: number }[];
 };
@@ -501,26 +592,34 @@ export async function getAdminOverview() {
   if (!profile) return { ...UNAUTHORIZED, overview: null };
   const admin = createAdminClient();
 
-  const [memberPayRes, apptRes, memRes, pendingApptRes, pendingMemRes] = await Promise.all([
-    // membership revenue: verified membership payments only
-    admin
-      .from("payments")
-      .select("amount, created_at")
-      .eq("purpose", "membership")
-      .eq("status", "verified"),
-    // confirmed bookings: verified only (fee revenue derives from these)
-    admin
-      .from("appointments")
-      .select("appointment_date, branch, amount, verified_at")
-      .eq("payment_status", "verified"),
-    admin.from("memberships").select("id").eq("active", true),
-    admin.from("appointments").select("id", { count: "exact", head: true }).eq("payment_status", "payment_uploaded"),
-    admin
-      .from("payments")
-      .select("id", { count: "exact", head: true })
-      .eq("purpose", "membership")
-      .eq("status", "payment_uploaded"),
-  ]);
+  const [memberPayRes, apptRes, memRes, pendingApptRes, pendingMemRes, completedRes, pendingSessRes] =
+    await Promise.all([
+      // membership revenue: verified membership payments only
+      admin
+        .from("payments")
+        .select("amount, created_at")
+        .eq("purpose", "membership")
+        .eq("status", "verified"),
+      // confirmed bookings: verified only (fee revenue derives from these)
+      admin
+        .from("appointments")
+        .select("appointment_date, branch, amount, verified_at")
+        .eq("payment_status", "verified"),
+      admin.from("memberships").select("id").eq("active", true),
+      admin.from("appointments").select("id", { count: "exact", head: true }).eq("payment_status", "payment_uploaded"),
+      admin
+        .from("payments")
+        .select("id", { count: "exact", head: true })
+        .eq("purpose", "membership")
+        .eq("status", "payment_uploaded"),
+      // sessions: completed vs confirmed-but-not-yet-completed
+      admin.from("appointments").select("id", { count: "exact", head: true }).eq("completed", true),
+      admin
+        .from("appointments")
+        .select("id", { count: "exact", head: true })
+        .eq("payment_status", "verified")
+        .eq("completed", false),
+    ]);
 
   const memberPays = (memberPayRes.data as { amount: number; created_at: string }[] | null) ?? [];
   const appts =
@@ -529,6 +628,8 @@ export async function getAdminOverview() {
       | null) ?? [];
   const members = (memRes.data as { id: string }[] | null) ?? [];
   const pendingVerification = (pendingApptRes.count ?? 0) + (pendingMemRes.count ?? 0);
+  const completedSessions = completedRes.count ?? 0;
+  const pendingSessions = pendingSessRes.count ?? 0;
 
   const feeRevenue = appts.reduce((s, a) => s + (a.amount ?? 0), 0);
   const membershipRevenue = memberPays.reduce((s, p) => s + p.amount, 0);
@@ -573,6 +674,8 @@ export async function getAdminOverview() {
     bookingsWeek,
     bookingsMonth,
     activeMembers: members.length,
+    completedSessions,
+    pendingSessions,
     revenueByDay,
     bookingsByBranch,
   };
@@ -610,6 +713,41 @@ export async function listMembers() {
     return { ...m, status };
   });
   return { ok: true as const, members };
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const memberInput = z.object({
+  id: z.string().uuid(),
+  client_name: z.string().trim().min(1, "Name is required").max(100),
+  phone: z.string().trim().min(1, "Phone is required").max(40),
+  start_date: z.string().regex(DATE_RE, "Invalid purchase date"),
+  activation_date: z.string().regex(DATE_RE, "Invalid activation date").nullable(),
+  expires_at: z.string().regex(DATE_RE, "Invalid expiry date"),
+  active: z.boolean(),
+  amount_paid: z.coerce.number().int().min(0),
+});
+
+export async function updateMember(input: z.infer<typeof memberInput>) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = memberInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  const { id, ...fields } = parsed.data;
+  const { error } = await admin.from("memberships").update(fields).eq("id", id);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+export async function deleteMember(input: { id: string }) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = idSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid id" };
+  const admin = createAdminClient();
+  const { error } = await admin.from("memberships").delete().eq("id", parsed.data.id);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
 }
 
 // ─────────────────────────────── Services ───────────────────────────────────
@@ -758,13 +896,13 @@ export async function saveBranch(input: z.infer<typeof branchInput>) {
 }
 
 // ─────────────────────────────── Staff ──────────────────────────────────────
-export type StaffRow = { id: string; name: string; branch: string };
+export type StaffRow = { id: string; name: string; branch: string; store_number: string | null };
 
 export async function listStaffManage() {
   const profile = await requireRole(["admin", "manager"]);
   if (!profile) return { ...UNAUTHORIZED, staff: [] as StaffRow[] };
   const admin = createAdminClient();
-  let q = admin.from("staff").select("id, name, branch").order("branch").order("name");
+  let q = admin.from("staff").select("id, name, branch, store_number").order("branch").order("name");
   if (profile.role === "manager" && profile.branch) q = q.eq("branch", profile.branch);
   const { data, error } = await q;
   if (error) return { ok: false as const, error: error.message, staff: [] as StaffRow[] };
@@ -774,6 +912,7 @@ export async function listStaffManage() {
 const addStaffInput = z.object({
   name: z.string().trim().min(1).max(50),
   branch: z.enum(BRANCHES_TUPLE),
+  store_number: z.string().trim().max(60).nullable().optional(),
 });
 
 export async function addStaff(input: z.infer<typeof addStaffInput>) {
@@ -786,6 +925,32 @@ export async function addStaff(input: z.infer<typeof addStaffInput>) {
   }
   const admin = createAdminClient();
   const { error } = await admin.from("staff").insert(parsed.data);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+const updateStaffInput = z.object({
+  id: z.string().uuid(),
+  store_number: z.string().trim().max(60).nullable().optional(),
+});
+
+/**
+ * Edit an existing stylist's store number. Deliberately scoped to store_number
+ * only: changing `name` would orphan staff logins/bookings that match on the
+ * roster name (profiles.staff_name). Authorized via staffInScope (admin = any,
+ * manager = own branch only).
+ */
+export async function updateStaff(input: z.infer<typeof updateStaffInput>) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = updateStaffInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid" };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.id))) return UNAUTHORIZED;
+  const { error } = await admin
+    .from("staff")
+    .update({ store_number: parsed.data.store_number ?? null })
+    .eq("id", parsed.data.id);
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
 }

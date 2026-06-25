@@ -14,6 +14,8 @@ import {
   ImageIcon,
   Clock,
   Loader2,
+  Plus,
+  Receipt,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,7 +58,11 @@ import {
   cancelBooking,
   deleteBooking,
   getProofUrl,
+  addAppointmentExtra,
+  listAppointmentExtras,
+  deleteAppointmentExtra,
   type BookingRow,
+  type ExtraRow,
 } from "@/lib/actions/admin";
 
 type StatusFilter =
@@ -113,6 +119,14 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   const [proofFor, setProofFor] = useState<BookingRow | null>(null);
   const [proofLoading, setProofLoading] = useState(false);
 
+  const [extrasFor, setExtrasFor] = useState<BookingRow | null>(null);
+  const [extras, setExtras] = useState<ExtraRow[]>([]);
+  const [extrasLoading, setExtrasLoading] = useState(false);
+  const [exLabel, setExLabel] = useState("");
+  const [exAmount, setExAmount] = useState("");
+  const [exSaving, setExSaving] = useState(false);
+  const extrasSum = extras.reduce((s, e) => s + e.amount, 0);
+
   const load = useCallback(async () => {
     setLoading(true);
     const res = await listBookings({
@@ -167,6 +181,52 @@ export function BookingsPanel({ role }: { role: UserRole }) {
     setProofUrl(res.url);
   }
 
+  const loadExtras = useCallback(async (appointmentId: string) => {
+    setExtrasLoading(true);
+    const res = await listAppointmentExtras({ appointmentId });
+    setExtrasLoading(false);
+    if (!res.ok) {
+      toast.error(res.error ?? "Could not load extras");
+      return;
+    }
+    setExtras(res.extras);
+  }, []);
+
+  async function openExtras(row: BookingRow) {
+    setExtrasFor(row);
+    setExtras([]);
+    setExLabel("");
+    setExAmount("");
+    await loadExtras(row.id);
+  }
+
+  async function onAddExtra() {
+    if (!extrasFor) return;
+    const amt = Number(exAmount);
+    if (!exLabel.trim()) return toast.error("Describe the extra service");
+    if (!Number.isFinite(amt) || amt < 0) return toast.error("Enter a valid amount");
+    setExSaving(true);
+    const res = await addAppointmentExtra({
+      appointmentId: extrasFor.id,
+      label: exLabel.trim(),
+      amount: Math.round(amt),
+    });
+    setExSaving(false);
+    if (!res.ok) return toast.error(res.error);
+    setExLabel("");
+    setExAmount("");
+    await loadExtras(extrasFor.id);
+    void load();
+  }
+
+  async function onDeleteExtra(id: string) {
+    if (!extrasFor) return;
+    const res = await deleteAppointmentExtra({ id, appointmentId: extrasFor.id });
+    if (!res.ok) return toast.error(res.error);
+    await loadExtras(extrasFor.id);
+    void load();
+  }
+
   function exportCsv() {
     downloadCsv(
       `bookings-${new Date().toISOString().slice(0, 10)}.csv`,
@@ -179,6 +239,8 @@ export function BookingsPanel({ role }: { role: UserRole }) {
         service: r.service,
         price: r.price,
         discount: r.discount_applied,
+        extras: r.extras_total,
+        total: r.price + r.extras_total,
         staff: r.staff_name,
         member: r.is_member ? "yes" : "no",
         status: r.completed ? "completed" : r.payment_status,
@@ -338,6 +400,14 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                       {r.discount_applied > 0 && (
                         <span className="ml-1 text-primary">(−₹{r.discount_applied})</span>
                       )}
+                      {r.extras_total > 0 && (
+                        <>
+                          <span className="ml-1">+ ₹{r.extras_total} extras</span>
+                          <span className="ml-1 font-medium text-foreground">
+                            = ₹{r.price + r.extras_total}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>{r.staff_name}</TableCell>
@@ -359,6 +429,11 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                     )}
                   </TableCell>
                   <TableCell className="text-right space-x-1 whitespace-nowrap">
+                    {r.payment_status === "verified" && (
+                      <Button size="sm" variant="outline" onClick={() => openExtras(r)}>
+                        <Receipt className="h-4 w-4 mr-1" /> Extras
+                      </Button>
+                    )}
                     {!r.completed && r.payment_status === "verified" && (
                       <Button size="sm" variant="outline" onClick={() => onComplete(r.id)}>
                         <CheckCircle2 className="h-4 w-4 mr-1" /> Done
@@ -389,7 +464,6 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     )}
-                    {r.completed && <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>
                 </TableRow>
               ))}
@@ -424,6 +498,84 @@ export function BookingsPanel({ role }: { role: UserRole }) {
             ) : (
               <p className="text-sm text-muted-foreground">No screenshot.</p>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!extrasFor} onOpenChange={(o) => !o && setExtrasFor(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Extra services — {extrasFor?.client_name}</DialogTitle>
+            <DialogDescription>
+              Base: {extrasFor?.service} · ₹{extrasFor?.price}. Add anything extra done in-studio.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {extrasLoading ? (
+              <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+              </div>
+            ) : extras.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No extras added yet.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {extras.map((e) => (
+                  <li
+                    key={e.id}
+                    className="flex items-center justify-between rounded-md border border-border/60 px-3 py-1.5 text-sm"
+                  >
+                    <span>{e.label}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="font-medium">₹{e.amount}</span>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        title="Remove"
+                        onClick={() => onDeleteExtra(e.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {extras.length > 0 && (
+              <div className="flex items-center justify-between border-t border-border/60 pt-2 text-sm">
+                <span className="text-muted-foreground">Total (base + extras)</span>
+                <span className="font-semibold">₹{(extrasFor?.price ?? 0) + extrasSum}</span>
+              </div>
+            )}
+
+            <div className="flex items-end gap-2 border-t border-border/60 pt-3">
+              <div className="flex-1 space-y-1">
+                <Label className="text-xs">Extra service</Label>
+                <Input
+                  value={exLabel}
+                  onChange={(e) => setExLabel(e.target.value)}
+                  placeholder="e.g. Nail art"
+                />
+              </div>
+              <div className="w-24 space-y-1">
+                <Label className="text-xs">₹ Amount</Label>
+                <Input
+                  value={exAmount}
+                  onChange={(e) => setExAmount(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="0"
+                />
+              </div>
+              <Button onClick={onAddExtra} disabled={exSaving} title="Add extra">
+                {exSaving ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

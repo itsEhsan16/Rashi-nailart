@@ -119,6 +119,41 @@ export type Database = {
         }
         Relationships: []
       }
+      appointment_extras: {
+        Row: {
+          amount: number
+          appointment_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string
+        }
+        Insert: {
+          amount: number
+          appointment_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label: string
+        }
+        Update: {
+          amount?: number
+          appointment_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_extras_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       app_settings: {
         Row: {
           id: string
@@ -376,18 +411,21 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          store_number: string | null
         }
         Insert: {
           branch: Database["public"]["Enums"]["branch"]
           created_at?: string
           id?: string
           name: string
+          store_number?: string | null
         }
         Update: {
           branch?: Database["public"]["Enums"]["branch"]
           created_at?: string
           id?: string
           name?: string
+          store_number?: string | null
         }
         Relationships: []
       }

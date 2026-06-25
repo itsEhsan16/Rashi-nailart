@@ -2,13 +2,13 @@
 
 import Image from "next/image";
 import { useRef, useState } from "react";
-import { Copy, Check, Loader2, Upload, QrCode, ShieldCheck } from "lucide-react";
+import { Copy, Check, Loader2, Upload, QrCode, ShieldCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
+import { MAX_PROOF_BYTES, PENDING_HOLD_MINUTES, isAcceptedProofFile } from "@/lib/salon-data";
 import type { PaymentSettings } from "@/lib/actions/booking";
 
 type UploadResult = { ok: true } | { ok: false; error?: string };
@@ -130,6 +130,17 @@ export function PaymentScreen({
           Scan the QR or copy our UPI ID, pay the {forLabel}, then upload your screenshot below.
         </p>
       </div>
+
+      {idField === "appointmentId" && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/15 px-3 py-2.5 text-sm text-amber-700">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Your booking is <span className="font-semibold">not confirmed yet</span>. This slot is
+            held for you for {PENDING_HOLD_MINUTES} minutes — upload your payment screenshot below to
+            keep it. If you leave without uploading, the slot is released for other customers.
+          </span>
+        </div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2 md:items-center">
         <div className="flex flex-col items-center gap-3">
