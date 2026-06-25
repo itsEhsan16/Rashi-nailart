@@ -4,7 +4,12 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile, type AuthProfile, type UserRole } from "@/lib/auth";
 import { BRANCHES_TUPLE } from "@/lib/validations/booking";
-import { prepareImageForStorage, signedProofUrl } from "@/lib/payment-proofs";
+import {
+  describeStorageError,
+  prepareImageForStorage,
+  pruneSiblings,
+  signedProofUrl,
+} from "@/lib/payment-proofs";
 import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
 import { fulfillMembershipPayment, type MembershipPayment } from "@/lib/payments-core";
 import { notifyCustomer } from "@/lib/notify";
@@ -459,7 +464,10 @@ export async function uploadQrImage(formData: FormData) {
     contentType: prepared.image.contentType,
     upsert: true,
   });
-  if (upErr) return { ok: false as const, error: upErr.message, url: null };
+  if (upErr) return { ok: false as const, error: describeStorageError(upErr.message), url: null };
+
+  // Drop a superseded QR object (e.g. qr.png replaced by a HEIC -> qr.jpg).
+  await pruneSiblings(admin, QR_BUCKET, "upi-qr", `qr.${prepared.image.ext}`);
 
   const { data: pub } = admin.storage.from(QR_BUCKET).getPublicUrl(path);
   // Cache-bust so the new image shows immediately at the reused path.
