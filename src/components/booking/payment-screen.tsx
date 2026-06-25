@@ -220,8 +220,8 @@ export function PaymentScreen({
           )}
         </Button>
         <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
-          <ShieldCheck className="h-3.5 w-3.5" /> Your booking is confirmed after we verify your
-          payment.
+          <ShieldCheck className="h-3.5 w-3.5" /> Upload your payment screenshot to confirm your
+          booking.
         </p>
       </div>
     </Card>

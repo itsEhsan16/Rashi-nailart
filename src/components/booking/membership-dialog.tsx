@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Crown, Loader2, Clock } from "lucide-react";
+import { Crown, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -79,13 +79,12 @@ export function MembershipDialog({ price }: { price: number }) {
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         {done ? (
           <div className="text-center py-4">
-            <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-amber-500/15 text-amber-600 grid place-items-center">
-              <Clock className="h-7 w-7" />
+            <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500/15 text-emerald-600 grid place-items-center">
+              <CheckCircle2 className="h-7 w-7" />
             </div>
-            <DialogTitle className="font-display text-xl">Payment proof received</DialogTitle>
+            <DialogTitle className="font-display text-xl">Thanks for joining! ✨</DialogTitle>
             <DialogDescription className="mt-2">
-              Your membership is pending verification. Once we confirm your payment, your benefits
-              are active right away. You&apos;ll be notified.
+              We&apos;ve received your membership payment — your benefits will be active shortly.
             </DialogDescription>
             <Button className="mt-6" variant="outline" onClick={() => setOpen(false)}>
               Close

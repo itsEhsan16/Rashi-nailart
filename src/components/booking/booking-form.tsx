@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, Crown, Loader2, Clock } from "lucide-react";
+import { CalendarIcon, Crown, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ import {
 } from "@/lib/actions/booking";
 import { PaymentScreen } from "@/components/booking/payment-screen";
 import type { ServiceOption, BranchOption, StaffOption } from "@/lib/catalog";
+import { PENDING_HOLD_MINUTES } from "@/lib/salon-data";
 
 type Props = {
   services: ServiceOption[];
@@ -52,12 +53,15 @@ type Summary = {
   storeNumber: string | null;
 };
 
-/** Persisted across reloads so the customer never loses an in-flight payment. */
+/** Persisted in localStorage so an in-flight payment survives the browser
+ *  discarding the tab when the customer switches to their UPI app to pay. */
 type PendingPayment = {
   appointmentId: string;
   amount: number;
   settings: PaymentSettings;
   summary: Summary;
+  /** ms epoch when the slot was held — used to drop a stale hold on restore. */
+  createdAt: number;
 };
 
 const PENDING_KEY = "rashi:pending-booking";
@@ -92,11 +96,18 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   const [pending, setPending] = useState<PendingPayment | null>(null);
   const [submitted, setSubmitted] = useState<Summary | null>(null);
 
-  // Restore an in-flight payment after a refresh/navigation so details aren't lost.
+  // Restore an in-flight payment after a refresh, navigation, or returning from
+  // the UPI app, so the customer can still upload their proof and keep the slot.
+  // A hold older than the window has been reclaimed server-side — drop it so the
+  // customer sees a fresh form instead of a dead payment screen.
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem(PENDING_KEY);
-      if (raw) setPending(JSON.parse(raw) as PendingPayment);
+      const raw = localStorage.getItem(PENDING_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as PendingPayment;
+      const fresh = Date.now() - (saved.createdAt ?? 0) < PENDING_HOLD_MINUTES * 60 * 1000;
+      if (fresh) setPending(saved);
+      else localStorage.removeItem(PENDING_KEY);
     } catch {
       /* ignore malformed storage */
     }
@@ -105,8 +116,8 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   const persistPending = useCallback((p: PendingPayment | null) => {
     setPending(p);
     try {
-      if (p) sessionStorage.setItem(PENDING_KEY, JSON.stringify(p));
-      else sessionStorage.removeItem(PENDING_KEY);
+      if (p) localStorage.setItem(PENDING_KEY, JSON.stringify(p));
+      else localStorage.removeItem(PENDING_KEY);
     } catch {
       /* storage may be unavailable */
     }
@@ -246,6 +257,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         appointmentId: res.appointmentId,
         amount: res.amount,
         settings: res.settings,
+        createdAt: Date.now(),
         summary: {
           service: values.service,
           date: format(values.appointment_date, "PPP"),
@@ -270,17 +282,17 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     reset();
     setIsMember(false);
     setBookedSlots([]);
-    toast.success("Payment proof received ✨");
+    toast.success("You're booked! ✨");
   }
 
-  // Awaiting-verification confirmation.
+  // Booking confirmation.
   if (submitted) {
     return (
       <Card className="p-8 md:p-10 text-center shadow-elegant border-border/60">
-        <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-amber-500/15 text-amber-600 grid place-items-center">
-          <Clock className="h-7 w-7" />
+        <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500/15 text-emerald-600 grid place-items-center">
+          <CheckCircle2 className="h-7 w-7" />
         </div>
-        <h3 className="font-display text-2xl font-semibold">Payment proof received</h3>
+        <h3 className="font-display text-2xl font-semibold">You&apos;re booked! ✨</h3>
         <p className="mt-2 text-muted-foreground">
           {submitted.service} with {submitted.staff} at {submitted.branch}
         </p>
@@ -291,8 +303,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           <p className="text-muted-foreground">Store number: {submitted.storeNumber}</p>
         )}
         <p className="mt-4 text-sm text-muted-foreground">
-          Your booking is <span className="font-medium text-foreground">pending verification</span>.
-          You&apos;ll be notified once it&apos;s confirmed.
+          We&apos;ve received your payment screenshot. See you at your appointment!
         </p>
         <Button className="mt-6" variant="outline" onClick={() => setSubmitted(null)}>
           Book another appointment
@@ -592,8 +603,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           )}
         </Button>
         <p className="text-xs text-center text-muted-foreground">
-          We&apos;ll hold your slot, then you pay the ₹{bookingFee} booking fee over UPI and upload a
-          screenshot. This ₹{bookingFee} will be deducted from total fees. Confirmed after we verify the payment.
+          We&apos;ll hold your slot for {PENDING_HOLD_MINUTES} minutes while you pay the ₹{bookingFee}{" "}
+          booking fee over UPI and upload the screenshot to confirm. This ₹{bookingFee} is deducted
+          from your total.
         </p>
       </form>
     </Card>
