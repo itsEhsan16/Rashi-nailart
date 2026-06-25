@@ -29,6 +29,7 @@ import {
   getBookedSlots,
   createBooking,
   uploadBookingProof,
+  cancelPendingBooking,
   type PaymentSettings,
 } from "@/lib/actions/booking";
 import { PaymentScreen } from "@/components/booking/payment-screen";
@@ -48,6 +49,7 @@ type Summary = {
   slot: string;
   staff: string;
   branch: string;
+  storeNumber: string | null;
 };
 
 /** Persisted across reloads so the customer never loses an in-flight payment. */
@@ -110,6 +112,19 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     }
   }, []);
 
+  /**
+   * Free the in-flight hold when the customer explicitly backs out — the booking
+   * is never confirmed without an uploaded proof. We only release on this
+   * deliberate action (not on tab-hide / app-switch): paying over UPI means
+   * leaving the browser for the UPI app, so auto-releasing on visibility/unload
+   * would wrongly cancel a payment in progress. True abandonment is reclaimed
+   * server-side by sweepStalePendingHolds and meanwhile hidden from dashboards.
+   */
+  const releasePending = useCallback(() => {
+    if (pending) void cancelPendingBooking({ appointmentId: pending.appointmentId });
+    persistPending(null);
+  }, [pending, persistPending]);
+
   const phone = watch("phone");
   const branch = watch("branch");
   const staffName = watch("staff_name");
@@ -164,11 +179,17 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     return byBranch.filter((s) => (s.schedule[apptDow]?.length ?? 0) > 0);
   }, [branch, staff, apptDow]);
 
+  // The chosen stylist (for store number, schedule, etc.).
+  const selectedStaff = useMemo(
+    () => filteredStaff.find((s) => s.name === staffName) ?? null,
+    [filteredStaff, staffName],
+  );
+
   // Slots the chosen stylist works on the chosen weekday (∩ active time slots).
   const scheduledSlots = useMemo(() => {
     if (apptDow === null || !staffName) return [] as string[];
-    return filteredStaff.find((s) => s.name === staffName)?.schedule[apptDow] ?? [];
-  }, [filteredStaff, staffName, apptDow]);
+    return selectedStaff?.schedule[apptDow] ?? [];
+  }, [selectedStaff, staffName, apptDow]);
   const availableSlots = useMemo(
     () => timeSlots.filter((t) => scheduledSlots.includes(t)),
     [timeSlots, scheduledSlots],
@@ -231,6 +252,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           slot: values.time_slot,
           staff: values.staff_name,
           branch: values.branch,
+          storeNumber:
+            staff.find((s) => s.name === values.staff_name && s.branch === values.branch)
+              ?.storeNumber ?? null,
         },
       });
     } catch (e) {
@@ -263,6 +287,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         <p className="text-muted-foreground">
           {submitted.date} · {submitted.slot}
         </p>
+        {submitted.storeNumber && (
+          <p className="text-muted-foreground">Store number: {submitted.storeNumber}</p>
+        )}
         <p className="mt-4 text-sm text-muted-foreground">
           Your booking is <span className="font-medium text-foreground">pending verification</span>.
           You&apos;ll be notified once it&apos;s confirmed.
@@ -290,7 +317,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         <button
           type="button"
           className="mx-auto block text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
-          onClick={() => persistPending(null)}
+          onClick={releasePending}
         >
           Cancel and edit booking details
         </button>
@@ -445,6 +472,11 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           />
           {noStylistsForDate && (
             <p className="text-sm text-muted-foreground">No slots available for this date.</p>
+          )}
+          {selectedStaff?.storeNumber && (
+            <p className="text-xs text-muted-foreground">
+              Store number: <span className="font-medium text-foreground">{selectedStaff.storeNumber}</span>
+            </p>
           )}
           {errors.staff_name && (
             <p className="text-xs text-destructive">{errors.staff_name.message}</p>

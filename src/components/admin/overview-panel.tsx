@@ -12,7 +12,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { IndianRupee, CalendarCheck, Crown, TrendingUp, Clock } from "lucide-react";
+import { IndianRupee, CalendarCheck, Crown, TrendingUp, Clock, CheckCircle2, Hourglass } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
@@ -88,7 +88,20 @@ export function OverviewPanel() {
           hint="awaiting your review"
         />
         <Stat label="Active members" value={String(data.activeMembers)} icon={<Crown className="h-5 w-5" />} />
+        <Stat
+          label="Completed sessions"
+          value={String(data.completedSessions)}
+          icon={<CheckCircle2 className="h-5 w-5" />}
+          hint="marked done by staff"
+        />
+        <Stat
+          label="Pending sessions"
+          value={String(data.pendingSessions)}
+          icon={<Hourglass className="h-5 w-5" />}
+          hint="confirmed, not yet completed"
+        />
       </div>
+
 
       <Card className="p-5">
         <h3 className="font-display text-lg font-semibold mb-4">Revenue · last 14 days</h3>
