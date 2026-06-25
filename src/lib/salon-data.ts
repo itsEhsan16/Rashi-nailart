@@ -69,5 +69,6 @@ export function isAcceptedProofFile(file: { type: string; name: string }): boole
   return false;
 }
 
-/** Abandoned pending_payment holds older than this are reclaimable. */
-export const PENDING_HOLD_MINUTES = 30;
+/** Abandoned pending_payment holds older than this are reclaimable. The customer
+ *  has this long to pay over UPI and upload their screenshot before the slot frees. */
+export const PENDING_HOLD_MINUTES = 5;
