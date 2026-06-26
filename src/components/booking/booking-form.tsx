@@ -21,7 +21,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Card } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, slotStartLabel } from "@/lib/utils";
 
 import { bookingFormSchema, type BookingFormValues } from "@/lib/validations/booking";
 import {
@@ -297,7 +297,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           {submitted.service} with {submitted.staff} at {submitted.branch}
         </p>
         <p className="text-muted-foreground">
-          {submitted.date} · {submitted.slot}
+          {submitted.date} · {slotStartLabel(submitted.slot)}
         </p>
         {submitted.storeNumber && (
           <p className="text-muted-foreground">Store number: {submitted.storeNumber}</p>
@@ -515,7 +515,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                       const taken = bookedSlots.includes(t);
                       return (
                         <SelectItem key={t} value={t} disabled={taken}>
-                          {t}
+                          {slotStartLabel(t)}
                           {taken ? " · booked" : ""}
                         </SelectItem>
                       );

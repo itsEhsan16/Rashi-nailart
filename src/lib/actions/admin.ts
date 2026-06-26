@@ -848,6 +848,29 @@ export async function deleteTimeSlot(input: { id: string }) {
   const parsed = idSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid id" };
   const admin = createAdminClient();
+
+  // Stylist schedules reference slots by label (staff_schedules.time_slot), not id.
+  // Deleting a slot that's still in use would silently empty those stylists' booking
+  // dropdowns, so refuse and tell the admin to clear it from the schedules first.
+  const { data: slot } = await admin
+    .from("time_slots")
+    .select("label")
+    .eq("id", parsed.data.id)
+    .single();
+  if (slot?.label) {
+    const { count } = await admin
+      .from("staff_schedules")
+      .select("id", { count: "exact", head: true })
+      .eq("time_slot", slot.label);
+    if ((count ?? 0) > 0)
+      return {
+        ok: false as const,
+        error: `Can't delete "${slot.label}" — ${count} stylist schedule${
+          count === 1 ? "" : "s"
+        } still use it. Remove it from those stylists' weekly schedules first.`,
+      };
+  }
+
   const { error } = await admin.from("time_slots").delete().eq("id", parsed.data.id);
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
