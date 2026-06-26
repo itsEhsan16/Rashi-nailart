@@ -137,7 +137,7 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
 
   const teamActions = (t: TeamRow) =>
     t.role !== "admin" ? (
-      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+      <div className="flex flex-wrap items-center justify-end gap-1">
         <Button size="sm" variant="outline" onClick={() => onReset(t)}>
           <KeyRound className="mr-1 h-4 w-4" /> Reset
         </Button>
@@ -326,7 +326,7 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
               </div>
             </div>
             {t.role !== "admin" && (
-              <div className="mt-3 flex justify-end border-t border-border/60 pt-3">{teamActions(t)}</div>
+              <div className="mt-3 flex flex-wrap justify-end border-t border-border/60 pt-3">{teamActions(t)}</div>
             )}
           </Card>
         ))}

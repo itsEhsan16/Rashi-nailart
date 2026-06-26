@@ -80,7 +80,7 @@ export function TaskCard({
       </div>
 
       {row.payment_status === "verified" && (
-        <div className="mt-2.5 flex items-center justify-end gap-2 border-t border-border/60 pt-2.5">
+        <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-2.5">
           <Button size="sm" variant="outline" onClick={() => onOpenExtras(row)}>
             <Receipt className="mr-1 h-4 w-4" /> Extras
           </Button>

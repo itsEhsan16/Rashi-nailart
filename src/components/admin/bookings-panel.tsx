@@ -50,7 +50,8 @@ import {
 import { StatusPill } from "@/components/dashboard/status-pill";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ExtrasDialog } from "@/components/dashboard/extras-dialog";
-import { cn, formatLocalDate, slotStartMinutes } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { sortBySchedule } from "@/lib/booking-sort";
 import { downloadCsv } from "@/lib/export-csv";
 import { BRANCHES } from "@/lib/salon-data";
 import type { UserRole } from "@/lib/auth";
@@ -71,32 +72,6 @@ type StatusFilter =
   | "rejected"
   | "cancelled"
   | "completed";
-
-/**
- * Schedule order for the bookings list: today/upcoming first (soonest first),
- * past dates pushed to the bottom (most-recent first). Within a day, the
- * earliest time slot leads. Mirrors the staff dashboard's sortTasks() ordering.
- */
-function sortBookingsForList(rows: BookingRow[]): BookingRow[] {
-  const today = formatLocalDate(new Date());
-  return rows.slice().sort((a, b) => {
-    const aPast = a.appointment_date < today ? 1 : 0;
-    const bPast = b.appointment_date < today ? 1 : 0;
-    if (aPast !== bPast) return aPast - bPast; // upcoming (0) before past (1)
-    if (aPast === 1) {
-      // past: most recent first
-      return (
-        b.appointment_date.localeCompare(a.appointment_date) ||
-        slotStartMinutes(b.time_slot) - slotStartMinutes(a.time_slot)
-      );
-    }
-    // today/upcoming: soonest first
-    return (
-      a.appointment_date.localeCompare(b.appointment_date) ||
-      slotStartMinutes(a.time_slot) - slotStartMinutes(b.time_slot)
-    );
-  });
-}
 
 /** Service + price/discount/extras summary, shared by the table cell and mobile card. */
 function ServiceSummary({ r }: { r: BookingRow }) {
@@ -124,7 +99,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   const showPhone = role !== "staff";
 
   const [rows, setRows] = useState<BookingRow[]>([]);
-  const sortedRows = useMemo(() => sortBookingsForList(rows), [rows]);
+  const sortedRows = useMemo(() => sortBySchedule(rows, Date.now()), [rows]);
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState<Date | undefined>();
   const [branch, setBranch] = useState<string>("");
@@ -216,7 +191,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   /** Action buttons, shared between the desktop table and mobile cards. */
   function RowActions({ r }: { r: BookingRow }) {
     return (
-      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+      <div className="flex flex-wrap items-center justify-end gap-1">
         {r.payment_status === "verified" && (
           <Button size="sm" variant="outline" onClick={() => setExtrasFor(r)}>
             <Receipt className="mr-1 h-4 w-4" /> Extras
@@ -493,7 +468,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
               </p>
             )}
 
-            <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3">
               <ProofButton r={r} />
               <RowActions r={r} />
             </div>

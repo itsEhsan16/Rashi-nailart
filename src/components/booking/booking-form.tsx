@@ -552,6 +552,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                   {filteredStaff.map((s) => (
                     <SelectItem key={s.name} value={s.name}>
                       {s.name}
+                      {s.storeNumber && (
+                        <span className="ml-2 text-muted-foreground">· Studio {s.storeNumber}</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -560,11 +563,6 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           />
           {noStylistsForDate && (
             <p className="text-sm text-muted-foreground">No slots available for this date.</p>
-          )}
-          {selectedStaff?.storeNumber && (
-            <p className="text-xs text-muted-foreground">
-              Studio number: <span className="font-medium text-foreground">{selectedStaff.storeNumber}</span>
-            </p>
           )}
           {errors.staff_name && (
             <p className="text-xs text-destructive">{errors.staff_name.message}</p>
