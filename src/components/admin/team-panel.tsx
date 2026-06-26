@@ -9,6 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SectionHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/empty-state";
+import { Users } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -88,7 +91,7 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
 
   async function onCreate() {
     if (effectiveRole === "staff" && !form.staff_name) {
-      return toast.error("Choose the stylist this login belongs to.");
+      return toast.error("Choose the artist this login belongs to.");
     }
     setSaving(true);
     const res = await createTeamMember({
@@ -123,10 +126,38 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
     void load();
   }
 
+  const roleBadge = (t: TeamRow) => (
+    <Badge
+      variant={t.role === "admin" ? "default" : t.role === "manager" ? "secondary" : "outline"}
+      className="capitalize"
+    >
+      {t.role}
+    </Badge>
+  );
+
+  const teamActions = (t: TeamRow) =>
+    t.role !== "admin" ? (
+      <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+        <Button size="sm" variant="outline" onClick={() => onReset(t)}>
+          <KeyRound className="mr-1 h-4 w-4" /> Reset
+        </Button>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 text-destructive hover:text-destructive"
+          onClick={() => onDelete(t)}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    ) : null;
+
   return (
-    <Card>
-      <div className="p-4 flex items-center justify-between">
-        <h3 className="font-display text-lg font-semibold">Team logins</h3>
+    <div className="space-y-6">
+      <SectionHeader
+        title="Team logins"
+        description={loading ? "Loading…" : `${rows.length} login${rows.length === 1 ? "" : "s"}`}
+        actions={
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button size="sm" className="bg-gradient-hero text-primary-foreground">
@@ -189,19 +220,19 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
 
               {effectiveRole === "staff" && (
                 <div className="space-y-1.5">
-                  <Label>Stylist (for bookings)</Label>
+                  <Label>Artist (for bookings)</Label>
                   <Select
                     value={form.staff_name}
                     onValueChange={(v) => setForm({ ...form, staff_name: v })}
                     disabled={!effectiveBranch}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder={effectiveBranch ? "Choose stylist" : "Pick a branch first"} />
+                      <SelectValue placeholder={effectiveBranch ? "Choose artist" : "Pick a branch first"} />
                     </SelectTrigger>
                     <SelectContent>
                       {branchStylists.length === 0 && (
                         <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                          No stylists in {effectiveBranch || "this branch"}. Add one under Manage → Stylists.
+                          No artists in {effectiveBranch || "this branch"}. Add one under Manage → Artists.
                         </div>
                       )}
                       {branchStylists.map((s) => {
@@ -216,7 +247,7 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    Links this login to a stylist so their dashboard shows their bookings.
+                    Links this login to an artist so their dashboard shows their bookings.
                   </p>
                 </div>
               )}
@@ -243,59 +274,63 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Branch</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 && !loading && (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  No team logins yet.
-                </TableCell>
+      {rows.length === 0 && !loading && (
+        <Card className="rounded-xl shadow-soft">
+          <EmptyState icon={<Users className="h-6 w-6" />} title="No team logins yet" description="Add staff and manager logins so they can access their dashboards." />
+        </Card>
+      )}
+
+      {/* Desktop table */}
+      <Card className={rows.length === 0 ? "hidden" : "hidden rounded-xl shadow-soft md:block"}>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="sticky top-0 z-10 border-b border-border bg-muted/40 backdrop-blur hover:bg-muted/40 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide">
+                <TableHead>Name</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Branch</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="font-medium">{t.full_name ?? t.staff_name ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-sm">{t.email}</TableCell>
+                  <TableCell>{roleBadge(t)}</TableCell>
+                  <TableCell>{t.branch && <Badge variant="secondary">{t.branch}</Badge>}</TableCell>
+                  <TableCell className="text-right">{teamActions(t)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+
+      {/* Mobile cards */}
+      <div className="space-y-3 md:hidden">
+        {rows.map((t) => (
+          <Card key={`m-${t.id}`} className="rounded-xl p-4 shadow-soft transition-colors hover:border-border">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate font-medium">{t.full_name ?? t.staff_name ?? "—"}</div>
+                <div className="truncate font-mono text-xs text-muted-foreground">{t.email}</div>
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                {roleBadge(t)}
+                {t.branch && <Badge variant="secondary">{t.branch}</Badge>}
+              </div>
+            </div>
+            {t.role !== "admin" && (
+              <div className="mt-3 flex justify-end border-t border-border/60 pt-3">{teamActions(t)}</div>
             )}
-            {rows.map((t) => (
-              <TableRow key={t.id}>
-                <TableCell className="font-medium">{t.full_name ?? t.staff_name ?? "—"}</TableCell>
-                <TableCell className="font-mono text-sm">{t.email}</TableCell>
-                <TableCell>
-                  <Badge variant={t.role === "admin" ? "default" : t.role === "manager" ? "secondary" : "outline"} className="capitalize">
-                    {t.role}
-                  </Badge>
-                </TableCell>
-                <TableCell>{t.branch && <Badge variant="secondary">{t.branch}</Badge>}</TableCell>
-                <TableCell className="text-right space-x-1 whitespace-nowrap">
-                  {t.role !== "admin" && (
-                    <>
-                      <Button size="sm" variant="outline" onClick={() => onReset(t)}>
-                        <KeyRound className="h-4 w-4 mr-1" /> Reset
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => onDelete(t)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+          </Card>
+        ))}
       </div>
-    </Card>
+    </div>
   );
 }

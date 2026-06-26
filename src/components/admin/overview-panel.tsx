@@ -17,30 +17,9 @@ import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatCard } from "@/components/dashboard/stat-card";
+import { SectionHeader } from "@/components/dashboard/page-header";
 import { getAdminOverview, type Overview } from "@/lib/actions/admin";
-
-function Stat({
-  label,
-  value,
-  icon,
-  hint,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  hint?: string;
-}) {
-  return (
-    <Card className="p-5">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <span className="text-primary">{icon}</span>
-      </div>
-      <div className="mt-2 font-display text-3xl font-semibold">{value}</div>
-      {hint && <div className="mt-1 text-xs text-muted-foreground">{hint}</div>}
-    </Card>
-  );
-}
 
 export function OverviewPanel() {
   const [data, setData] = useState<Overview | null>(null);
@@ -57,9 +36,9 @@ export function OverviewPanel() {
 
   if (loading) {
     return (
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-28 rounded-xl" />
+          <Skeleton key={i} className="h-20 rounded-xl" />
         ))}
         <Skeleton className="h-72 rounded-xl sm:col-span-2 lg:col-span-4" />
       </div>
@@ -72,39 +51,43 @@ export function OverviewPanel() {
 
   return (
     <div className="space-y-6">
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Stat
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
           label="Total revenue"
           value={inr(data.totalRevenue)}
           icon={<IndianRupee className="h-5 w-5" />}
+          accent="primary"
           hint={`${inr(data.feeRevenue)} fees · ${inr(data.membershipRevenue)} memberships`}
         />
-        <Stat label="Bookings today" value={String(data.bookingsToday)} icon={<CalendarCheck className="h-5 w-5" />} hint="confirmed appointments" />
-        <Stat label="This week" value={String(data.bookingsWeek)} icon={<TrendingUp className="h-5 w-5" />} hint={`${data.bookingsMonth} this month`} />
-        <Stat
+        <StatCard label="Bookings today" value={String(data.bookingsToday)} icon={<CalendarCheck className="h-5 w-5" />} accent="primary" hint="confirmed appointments" />
+        <StatCard label="This week" value={String(data.bookingsWeek)} icon={<TrendingUp className="h-5 w-5" />} accent="primary" hint={`${data.bookingsMonth} this month`} />
+        <StatCard
           label="Pending verification"
           value={String(data.pendingVerification)}
           icon={<Clock className="h-5 w-5" />}
+          accent="amber"
           hint="awaiting your review"
         />
-        <Stat label="Active members" value={String(data.activeMembers)} icon={<Crown className="h-5 w-5" />} />
-        <Stat
+        <StatCard label="Active members" value={String(data.activeMembers)} icon={<Crown className="h-5 w-5" />} accent="primary" />
+        <StatCard
           label="Completed sessions"
           value={String(data.completedSessions)}
           icon={<CheckCircle2 className="h-5 w-5" />}
+          accent="emerald"
           hint="marked done by staff"
         />
-        <Stat
+        <StatCard
           label="Pending sessions"
           value={String(data.pendingSessions)}
           icon={<Hourglass className="h-5 w-5" />}
+          accent="amber"
           hint="confirmed, not yet completed"
         />
       </div>
 
 
       <Card className="p-5">
-        <h3 className="font-display text-lg font-semibold mb-4">Revenue · last 14 days</h3>
+        <SectionHeader title="Revenue · last 14 days" className="mb-4" />
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data.revenueByDay} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
@@ -137,7 +120,7 @@ export function OverviewPanel() {
       </Card>
 
       <Card className="p-5">
-        <h3 className="font-display text-lg font-semibold mb-4">Bookings by branch</h3>
+        <SectionHeader title="Bookings by branch" className="mb-4" />
         <div className="h-64">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data.bookingsByBranch} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>

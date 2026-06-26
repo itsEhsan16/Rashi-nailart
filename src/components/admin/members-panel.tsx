@@ -11,6 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SectionHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/empty-state";
+import { Crown } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -100,14 +103,44 @@ export function MembersPanel() {
     void load();
   }
 
+  const statusBadge = (m: MemberRow) =>
+    m.status === "active" ? (
+      <Badge className="bg-emerald-600 text-white">Active</Badge>
+    ) : m.status === "pending" ? (
+      <Badge variant="outline">Pending activation</Badge>
+    ) : (
+      <Badge variant="destructive">Expired</Badge>
+    );
+
+  const memberActions = (m: MemberRow) => (
+    <div className="flex items-center justify-end gap-1">
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8"
+        aria-label="Edit member"
+        onClick={() => openEdit(m)}
+      >
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-8 w-8 text-destructive hover:text-destructive"
+        aria-label="Remove member"
+        onClick={() => onDelete(m)}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+
   return (
-    <Card>
-      <div className="p-4 flex items-center justify-between">
-        <h3 className="font-display text-lg font-semibold">Members</h3>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">
-            {loading ? "Loading…" : `${rows.length} member${rows.length === 1 ? "" : "s"}`}
-          </span>
+    <div className="space-y-6">
+      <SectionHeader
+        title="Members"
+        description={loading ? "Loading…" : `${rows.length} member${rows.length === 1 ? "" : "s"}`}
+        actions={
           <Button
             variant="outline"
             size="sm"
@@ -129,73 +162,73 @@ export function MembersPanel() {
           >
             <Download className="mr-1 h-4 w-4" /> CSV
           </Button>
+        }
+      />
+
+      {rows.length === 0 && !loading && (
+        <Card className="shadow-soft">
+          <EmptyState icon={<Crown className="h-6 w-6" />} title="No members yet" description="Memberships purchased by clients will appear here." />
+        </Card>
+      )}
+
+      {/* Desktop table */}
+      <Card className={rows.length === 0 ? "hidden" : "hidden shadow-soft md:block"}>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="sticky top-0 z-10 border-b border-border bg-muted/40 backdrop-blur hover:bg-muted/40 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide">
+                <TableHead>Name</TableHead>
+                <TableHead>Phone</TableHead>
+                <TableHead>Purchased</TableHead>
+                <TableHead>Activates</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((m) => (
+                <TableRow key={m.id}>
+                  <TableCell className="font-medium">{m.client_name}</TableCell>
+                  <TableCell>{m.phone}</TableCell>
+                  <TableCell>{format(new Date(m.start_date), "dd MMM yyyy")}</TableCell>
+                  <TableCell>
+                    {m.activation_date ? format(new Date(m.activation_date), "dd MMM yyyy") : "—"}
+                  </TableCell>
+                  <TableCell>{format(new Date(m.expires_at), "dd MMM yyyy")}</TableCell>
+                  <TableCell>{statusBadge(m)}</TableCell>
+                  <TableCell className="text-right">{memberActions(m)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
-      </div>
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead>Purchased</TableHead>
-              <TableHead>Activates</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.length === 0 && !loading && (
-              <TableRow>
-                <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
-                  No members yet.
-                </TableCell>
-              </TableRow>
-            )}
-            {rows.map((m) => (
-              <TableRow key={m.id}>
-                <TableCell className="font-medium">{m.client_name}</TableCell>
-                <TableCell>{m.phone}</TableCell>
-                <TableCell>{format(new Date(m.start_date), "dd MMM yyyy")}</TableCell>
-                <TableCell>
-                  {m.activation_date ? format(new Date(m.activation_date), "dd MMM yyyy") : "—"}
-                </TableCell>
-                <TableCell>{format(new Date(m.expires_at), "dd MMM yyyy")}</TableCell>
-                <TableCell>
-                  {m.status === "active" ? (
-                    <Badge className="bg-emerald-600 text-white">Active</Badge>
-                  ) : m.status === "pending" ? (
-                    <Badge variant="outline">Pending activation</Badge>
-                  ) : (
-                    <Badge variant="destructive">Expired</Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center justify-end gap-1">
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8"
-                      aria-label="Edit member"
-                      onClick={() => openEdit(m)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      aria-label="Remove member"
-                      onClick={() => onDelete(m)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      </Card>
+
+      {/* Mobile cards */}
+      <div className="space-y-3 md:hidden">
+        {rows.map((m) => (
+          <Card key={`m-${m.id}`} className="p-4 shadow-soft">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate font-medium">{m.client_name}</div>
+                <div className="text-xs text-muted-foreground">{m.phone}</div>
+              </div>
+              {statusBadge(m)}
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
+              <div className="text-muted-foreground">Purchased</div>
+              <div className="text-right">{format(new Date(m.start_date), "dd MMM yyyy")}</div>
+              <div className="text-muted-foreground">Activates</div>
+              <div className="text-right">
+                {m.activation_date ? format(new Date(m.activation_date), "dd MMM yyyy") : "—"}
+              </div>
+              <div className="text-muted-foreground">Expires</div>
+              <div className="text-right">{format(new Date(m.expires_at), "dd MMM yyyy")}</div>
+            </div>
+            <div className="mt-3 flex justify-end border-t border-border/60 pt-3">{memberActions(m)}</div>
+          </Card>
+        ))}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -276,6 +309,6 @@ export function MembersPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }

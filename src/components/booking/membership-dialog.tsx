@@ -118,8 +118,8 @@ export function MembershipDialog({ price }: { price: number }) {
                 join. We use your phone to recognise you at booking.
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit(onSubmit)} className="space-y-3" noValidate>
-              <div className="space-y-1.5">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+              <div className="space-y-2">
                 <Label htmlFor="m_name">Your Name</Label>
                 <Input
                   id="m_name"
@@ -131,7 +131,7 @@ export function MembershipDialog({ price }: { price: number }) {
                   <p className="text-xs text-destructive">{errors.client_name.message}</p>
                 )}
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <Label htmlFor="m_phone">Phone Number</Label>
                 <Input
                   id="m_phone"

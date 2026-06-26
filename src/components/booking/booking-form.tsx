@@ -33,6 +33,7 @@ import {
   type PaymentSettings,
 } from "@/lib/actions/booking";
 import { PaymentScreen } from "@/components/booking/payment-screen";
+import { BookingSteps } from "@/components/booking/booking-steps";
 import type { ServiceOption, BranchOption, StaffOption } from "@/lib/catalog";
 import { PENDING_HOLD_MINUTES } from "@/lib/salon-data";
 
@@ -66,6 +67,18 @@ type PendingPayment = {
 
 const PENDING_KEY = "rashi:pending-booking";
 
+/** A confirmed booking stays on screen for 24h (across refreshes) until the
+ *  customer explicitly books another — so they keep their appointment details
+ *  handy after closing or reopening the tab. */
+type ConfirmedBooking = {
+  summary: Summary;
+  /** ms epoch when the booking was confirmed (proof uploaded). */
+  confirmedAt: number;
+};
+
+const CONFIRMED_KEY = "rashi:confirmed-booking";
+const CONFIRMED_TTL_MS = 24 * 60 * 60 * 1000;
+
 export function BookingForm({ services, timeSlots, branches, staff, bookingFee }: Props) {
   const {
     control,
@@ -95,13 +108,26 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   const [submitting, setSubmitting] = useState(false);
   const [pending, setPending] = useState<PendingPayment | null>(null);
   const [submitted, setSubmitted] = useState<Summary | null>(null);
+  const [restoring, setRestoring] = useState(true);
 
-  // Restore an in-flight payment after a refresh, navigation, or returning from
-  // the UPI app, so the customer can still upload their proof and keep the slot.
-  // A hold older than the window has been reclaimed server-side — drop it so the
-  // customer sees a fresh form instead of a dead payment screen.
+  // On mount, restore saved state so a refresh/navigation doesn't lose it:
+  //  1. A confirmed booking stays for 24h until the customer books another, so
+  //     they keep their appointment details handy after reopening the tab.
+  //  2. Otherwise an in-flight payment hold is restored (e.g. after returning
+  //     from the UPI app) so the customer can still upload proof and keep the
+  //     slot. A hold older than the window was reclaimed server-side — drop it.
   useEffect(() => {
     try {
+      const confRaw = localStorage.getItem(CONFIRMED_KEY);
+      if (confRaw) {
+        const savedConf = JSON.parse(confRaw) as ConfirmedBooking;
+        if (Date.now() - (savedConf.confirmedAt ?? 0) < CONFIRMED_TTL_MS) {
+          setSubmitted(savedConf.summary);
+          return; // confirmation wins — don't also restore a payment hold
+        }
+        localStorage.removeItem(CONFIRMED_KEY);
+      }
+
       const raw = localStorage.getItem(PENDING_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw) as PendingPayment;
@@ -110,6 +136,8 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
       else localStorage.removeItem(PENDING_KEY);
     } catch {
       /* ignore malformed storage */
+    } finally {
+      setRestoring(false);
     }
   }, []);
 
@@ -135,6 +163,17 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     if (pending) void cancelPendingBooking({ appointmentId: pending.appointmentId });
     persistPending(null);
   }, [pending, persistPending]);
+
+  // Dismiss the 24h confirmation and return to a fresh form — the only way the
+  // customer leaves the "You're booked" screen short of the 24h expiry.
+  const clearConfirmed = useCallback(() => {
+    setSubmitted(null);
+    try {
+      localStorage.removeItem(CONFIRMED_KEY);
+    } catch {
+      /* storage may be unavailable */
+    }
+  }, []);
 
   const phone = watch("phone");
   const branch = watch("branch");
@@ -277,7 +316,16 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   }
 
   function onProofUploaded() {
-    if (pending) setSubmitted(pending.summary);
+    if (pending) {
+      setSubmitted(pending.summary);
+      // Persist the confirmation so it survives a refresh for the next 24h.
+      try {
+        const payload: ConfirmedBooking = { summary: pending.summary, confirmedAt: Date.now() };
+        localStorage.setItem(CONFIRMED_KEY, JSON.stringify(payload));
+      } catch {
+        /* storage may be unavailable */
+      }
+    }
     persistPending(null);
     reset();
     setIsMember(false);
@@ -285,37 +333,55 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     toast.success("You're booked! ✨");
   }
 
+  // While we read localStorage on mount, hold a neutral placeholder so a saved
+  // confirmation/payment screen restores without flashing the empty form first.
+  if (restoring) {
+    return (
+      <Card className="grid min-h-55 place-items-center rounded-xl border-border/60 p-8 shadow-elegant md:p-10">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </Card>
+    );
+  }
+
   // Booking confirmation.
   if (submitted) {
     return (
-      <Card className="p-8 md:p-10 text-center shadow-elegant border-border/60">
-        <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500/15 text-emerald-600 grid place-items-center">
-          <CheckCircle2 className="h-7 w-7" />
-        </div>
-        <h3 className="font-display text-2xl font-semibold">You&apos;re booked! ✨</h3>
-        <p className="mt-2 text-muted-foreground">
-          {submitted.service} with {submitted.staff} at {submitted.branch}
-        </p>
-        <p className="text-muted-foreground">
-          {submitted.date} · {slotStartLabel(submitted.slot)}
-        </p>
-        {submitted.storeNumber && (
-          <p className="text-muted-foreground">Store number: {submitted.storeNumber}</p>
-        )}
-        <p className="mt-4 text-sm text-muted-foreground">
-          We&apos;ve received your payment screenshot. See you at your appointment!
-        </p>
-        <Button className="mt-6" variant="outline" onClick={() => setSubmitted(null)}>
-          Book another appointment
-        </Button>
-      </Card>
+      <div className="space-y-6">
+        <BookingSteps current={2} />
+        <Card className="rounded-xl p-8 md:p-10 text-center shadow-elegant border-border/60">
+          <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500/15 text-emerald-600 grid place-items-center">
+            <CheckCircle2 className="h-7 w-7" />
+          </div>
+          <h3 className="font-display text-2xl font-semibold">You&apos;re booked! ✨</h3>
+          <p className="mt-2 text-muted-foreground">
+            {submitted.service} with {submitted.staff} at {submitted.branch}
+          </p>
+          <p className="text-muted-foreground">
+            {submitted.date} · {slotStartLabel(submitted.slot)}
+          </p>
+          {submitted.storeNumber && (
+            <p className="text-muted-foreground">Studio number: {submitted.storeNumber}</p>
+          )}
+          <div className="mx-auto mt-5 max-w-sm rounded-lg border border-border/60 bg-muted/40 px-4 py-3 text-left text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">What happens next</p>
+            <p className="mt-1">
+              We&apos;ve received your screenshot and will verify your ₹{bookingFee} payment. Nothing
+              more to pay online — just arrive at your slot. Pay the balance at the studio.
+            </p>
+          </div>
+          <Button className="mt-6" variant="outline" onClick={clearConfirmed}>
+            Book another appointment
+          </Button>
+        </Card>
+      </div>
     );
   }
 
   // Payment screen — held booking awaiting the UPI screenshot.
   if (pending) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-6">
+        <BookingSteps current={1} />
         <PaymentScreen
           id={pending.appointmentId}
           idField="appointmentId"
@@ -323,6 +389,8 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           settings={pending.settings}
           uploadAction={uploadBookingProof}
           forLabel="booking fee"
+          holdExpiresAt={pending.createdAt + PENDING_HOLD_MINUTES * 60 * 1000}
+          summaryLine={`${pending.summary.service} · ${pending.summary.date} · ${slotStartLabel(pending.summary.slot)}`}
           onUploaded={onProofUploaded}
         />
         <button
@@ -337,18 +405,27 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   }
 
   return (
-    <Card className="p-6 md:p-10 shadow-elegant border-border/60">
-      {isMember && (
-        <div className="mb-5 flex items-center gap-2 rounded-md bg-primary/10 border border-primary/30 px-3 py-2 text-sm">
-          <Crown className="h-4 w-4 text-primary" />
-          <span>
-            Member detected — <span className="font-medium">50% off nail art</span> applied
-            automatically.
-          </span>
+    <div className="space-y-6">
+      <BookingSteps current={0} />
+      <Card className="rounded-xl p-6 md:p-10 shadow-elegant border-border/60">
+        <div className="mb-6">
+          <h3 className="font-display text-xl font-semibold">Your details</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Pick your branch, artist, date &amp; service. We&apos;ll hold your slot for{" "}
+            {PENDING_HOLD_MINUTES} minutes while you pay the ₹{bookingFee} fee to confirm.
+          </p>
         </div>
-      )}
+        {isMember && (
+          <div className="mb-6 flex items-center gap-2 rounded-lg bg-primary/10 border border-primary/30 px-3 py-2 text-sm">
+            <Crown className="h-4 w-4 text-primary" />
+            <span>
+              Member detected — <span className="font-medium">50% off nail art</span> applied
+              automatically.
+            </span>
+          </div>
+        )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6" noValidate>
         <div className="grid md:grid-cols-2 gap-5">
           <div className="space-y-2">
             <Label htmlFor="client_name">Client Name</Label>
@@ -450,7 +527,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         </div>
 
         <div className="space-y-2">
-          <Label>Stylist</Label>
+          <Label>Artist</Label>
           <Controller
             control={control}
             name="staff_name"
@@ -464,12 +541,12 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                 disabled={!branch}
               >
                 <SelectTrigger aria-invalid={!!errors.staff_name}>
-                  <SelectValue placeholder={branch ? "Choose stylist" : "Pick a branch first"} />
+                  <SelectValue placeholder={branch ? "Choose artist" : "Pick a branch first"} />
                 </SelectTrigger>
                 <SelectContent>
                   {filteredStaff.length === 0 && (
                     <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                      {apptDate ? "No stylists available on this date" : "No stylists for this branch"}
+                      {apptDate ? "No artists available on this date" : "No artists for this branch"}
                     </div>
                   )}
                   {filteredStaff.map((s) => (
@@ -486,7 +563,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           )}
           {selectedStaff?.storeNumber && (
             <p className="text-xs text-muted-foreground">
-              Store number: <span className="font-medium text-foreground">{selectedStaff.storeNumber}</span>
+              Studio number: <span className="font-medium text-foreground">{selectedStaff.storeNumber}</span>
             </p>
           )}
           {errors.staff_name && (
@@ -507,7 +584,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                 <Select value={field.value} onValueChange={field.onChange} disabled={!slotsReady}>
                   <SelectTrigger aria-invalid={!!errors.time_slot}>
                     <SelectValue
-                      placeholder={slotsReady ? "Choose time" : "Pick stylist & date first"}
+                      placeholder={slotsReady ? "Choose time" : "Pick artist & date first"}
                     />
                   </SelectTrigger>
                   <SelectContent>
@@ -607,7 +684,8 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           booking fee over UPI and upload the screenshot to confirm. This ₹{bookingFee} is deducted
           from your total.
         </p>
-      </form>
-    </Card>
+        </form>
+      </Card>
+    </div>
   );
 }

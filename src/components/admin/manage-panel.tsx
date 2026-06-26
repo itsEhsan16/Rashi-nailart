@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Save } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, Scissors, Clock, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,9 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { TimeField12h } from "@/components/ui/time-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SectionHeader } from "@/components/dashboard/page-header";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +35,8 @@ import {
   type BranchRow,
 } from "@/lib/actions/admin";
 import { StaffManager } from "@/components/admin/staff-manager";
+import { EmptyState } from "@/components/dashboard/empty-state";
+import { composeSlotLabel, minutesOfDay, slotStartLabel } from "@/lib/utils";
 
 // ───────────────────────────── Services ─────────────────────────────────────
 function ServicesManager() {
@@ -93,9 +97,11 @@ function ServicesManager() {
   }
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between">
-        <h3 className="font-display text-xl font-semibold">Services &amp; pricing</h3>
+    <Card className="rounded-xl p-5 shadow-soft">
+      <SectionHeader
+        title="Services & pricing"
+        description="Manage what customers can book and how it's priced."
+        actions={
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button size="sm" onClick={openNew} className="bg-gradient-hero text-primary-foreground">
@@ -153,22 +159,30 @@ function ServicesManager() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+        }
+      />
 
       <div className="mt-4 space-y-2">
         {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {!loading && rows.length === 0 && (
+          <EmptyState
+            icon={<Scissors className="h-6 w-6" />}
+            title="No services yet"
+            description="Add your first service so customers have something to book."
+          />
+        )}
         {rows.map((s) => (
           <div
             key={s.id}
-            className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2"
+            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-4 py-3 transition-colors hover:border-border hover:bg-muted/40"
           >
-            <div>
-              <div className="font-medium flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 font-medium">
                 {s.name}
                 {s.is_nail_art && <Badge variant="secondary">nail art</Badge>}
                 {!s.active && <Badge variant="outline">hidden</Badge>}
               </div>
-              <div className="text-sm text-muted-foreground">₹{s.price}</div>
+              <div className="mt-0.5 text-sm text-muted-foreground">₹{s.price}</div>
             </div>
             <div className="flex items-center gap-1">
               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(s)}>
@@ -194,7 +208,11 @@ function ServicesManager() {
 function SlotsManager() {
   const [rows, setRows] = useState<SlotRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [label, setLabel] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+
+  // Live preview of the label that will be stored (range form, e.g. "8:30 PM – 10:00 PM").
+  const previewLabel = composeSlotLabel(start, end);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,10 +226,17 @@ function SlotsManager() {
   }, [load]);
 
   async function onAdd() {
-    if (!label.trim()) return;
-    const res = await saveTimeSlot({ label: label.trim(), active: true, sort_order: rows.length + 1 });
+    if (!start || !end) return toast.error("Pick a start and end time");
+    if (minutesOfDay(end) <= minutesOfDay(start))
+      return toast.error("End time must be after the start time");
+    const label = composeSlotLabel(start, end);
+    if (!label) return toast.error("Enter valid times");
+    if (rows.some((r) => r.label === label)) return toast.error("That slot already exists");
+    // sort_order = start time in minutes so slots list chronologically.
+    const res = await saveTimeSlot({ label, active: true, sort_order: minutesOfDay(start) });
     if (!res.ok) return toast.error(res.error);
-    setLabel("");
+    setStart("");
+    setEnd("");
     void load();
   }
   async function onToggle(s: SlotRow) {
@@ -227,25 +252,46 @@ function SlotsManager() {
   }
 
   return (
-    <Card className="p-6">
-      <h3 className="font-display text-xl font-semibold">Time slots</h3>
-      <div className="mt-4 flex items-end gap-3">
-        <div className="space-y-1.5 flex-1">
-          <Label className="text-xs">New slot label</Label>
-          <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. 8:30 PM – 10:00 PM" />
+    <Card className="rounded-xl p-5 shadow-soft">
+      <SectionHeader
+        title="Time slots"
+        description="Define the slots artists can be scheduled into."
+      />
+      <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-muted/30 p-4">
+        <div className="space-y-1.5">
+          <Label className="text-xs" htmlFor="slot-start">Start time</Label>
+          <TimeField12h id="slot-start" ariaLabel="Start time" value={start} onChange={setStart} />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs" htmlFor="slot-end">End time</Label>
+          <TimeField12h id="slot-end" ariaLabel="End time" value={end} onChange={setEnd} />
         </div>
         <Button onClick={onAdd} className="bg-gradient-hero text-primary-foreground">
           <Plus className="h-4 w-4 mr-1" /> Add
         </Button>
       </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        {previewLabel
+          ? `Saved as "${previewLabel}". Customers see the start time (${slotStartLabel(
+              previewLabel,
+            )}); artists pick from these slots in their weekly schedule.`
+          : "Pick a start and end time. Customers see only the start time; artists choose from these slots in their weekly schedule."}
+      </p>
       <div className="mt-4 space-y-2">
         {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {!loading && rows.length === 0 && (
+          <EmptyState
+            icon={<Clock className="h-6 w-6" />}
+            title="No time slots yet"
+            description="Add a slot above so artists can be scheduled and customers can book."
+          />
+        )}
         {rows.map((s) => (
           <div
             key={s.id}
-            className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2"
+            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-4 py-3 transition-colors hover:border-border hover:bg-muted/40"
           >
-            <span className={s.active ? "" : "text-muted-foreground line-through"}>{s.label}</span>
+            <span className={s.active ? "font-medium" : "text-muted-foreground line-through"}>{s.label}</span>
             <div className="flex items-center gap-3">
               <Switch checked={s.active} onCheckedChange={() => onToggle(s)} />
               <Button
@@ -296,12 +342,22 @@ function BranchesManager() {
   }
 
   return (
-    <Card className="p-6">
-      <h3 className="font-display text-xl font-semibold">Branches</h3>
+    <Card className="rounded-xl p-5 shadow-soft">
+      <SectionHeader
+        title="Branches"
+        description="Update the contact details customers see for each location."
+      />
       <div className="mt-4 space-y-4">
         {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {!loading && rows.length === 0 && (
+          <EmptyState
+            icon={<MapPin className="h-6 w-6" />}
+            title="No branches yet"
+            description="Branches appear here once they're configured."
+          />
+        )}
         {rows.map((b) => (
-          <div key={b.id} className="rounded-lg border border-border/60 p-4 space-y-3">
+          <div key={b.id} className="space-y-3 rounded-lg border border-border/60 p-4 transition-colors hover:border-border">
             <div className="flex items-center justify-between">
               <span className="font-display text-lg font-semibold">{b.name}</span>
               <div className="flex items-center gap-2 text-sm">
@@ -340,23 +396,23 @@ function BranchesManager() {
 
 export function ManagePanel() {
   return (
-    <Tabs defaultValue="services">
+    <Tabs defaultValue="services" className="space-y-6">
       <TabsList>
         <TabsTrigger value="services">Services</TabsTrigger>
         <TabsTrigger value="slots">Time slots</TabsTrigger>
         <TabsTrigger value="branches">Branches</TabsTrigger>
-        <TabsTrigger value="staff">Stylists</TabsTrigger>
+        <TabsTrigger value="staff">Artists</TabsTrigger>
       </TabsList>
-      <TabsContent value="services" className="mt-6">
+      <TabsContent value="services" className="mt-0">
         <ServicesManager />
       </TabsContent>
-      <TabsContent value="slots" className="mt-6">
+      <TabsContent value="slots" className="mt-0">
         <SlotsManager />
       </TabsContent>
-      <TabsContent value="branches" className="mt-6">
+      <TabsContent value="branches" className="mt-0">
         <BranchesManager />
       </TabsContent>
-      <TabsContent value="staff" className="mt-6">
+      <TabsContent value="staff" className="mt-0">
         <StaffManager />
       </TabsContent>
     </Tabs>

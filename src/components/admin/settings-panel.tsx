@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SectionHeader } from "@/components/dashboard/page-header";
 import {
   getAppSettings,
   saveAppSettings,
@@ -63,13 +64,11 @@ export function SettingsPanel() {
   if (loading) return <Skeleton className="h-80 rounded-xl" />;
 
   return (
-    <Card className="p-6 max-w-2xl space-y-5">
-      <div>
-        <h3 className="font-display text-lg font-semibold">UPI payment settings</h3>
-        <p className="text-sm text-muted-foreground">
-          Shown to customers on the payment screen. Changes take effect immediately — no redeploy.
-        </p>
-      </div>
+    <Card className="max-w-2xl space-y-5 rounded-xl p-5 shadow-soft">
+      <SectionHeader
+        title="UPI payment settings"
+        description="Shown to customers on the payment screen. Changes take effect immediately — no redeploy."
+      />
 
       <div className="space-y-1.5">
         <Label htmlFor="upi_id">UPI ID</Label>
@@ -129,8 +128,7 @@ export function SettingsPanel() {
       </div>
 
       {form.upi_qr_url && (
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground">Preview:</span>
+        <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/30 p-4">
           <div className="rounded-md border border-border/60 bg-white p-2">
             <Image
               src={form.upi_qr_url}
@@ -140,6 +138,10 @@ export function SettingsPanel() {
               className="h-24 w-24 object-contain"
               unoptimized
             />
+          </div>
+          <div className="text-sm">
+            <p className="font-medium">QR preview</p>
+            <p className="text-xs text-muted-foreground">This is what customers scan to pay.</p>
           </div>
         </div>
       )}

@@ -1,14 +1,15 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState } from "react";
-import { Copy, Check, Loader2, Upload, QrCode, ShieldCheck, AlertTriangle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Copy, Check, Loader2, Upload, QrCode, ShieldCheck, AlertTriangle, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { MAX_PROOF_BYTES, PENDING_HOLD_MINUTES, isAcceptedProofFile } from "@/lib/salon-data";
+import { cn } from "@/lib/utils";
+import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
 import type { PaymentSettings } from "@/lib/actions/booking";
 
 type UploadResult = { ok: true } | { ok: false; error?: string };
@@ -47,8 +48,20 @@ type Props = {
   uploadAction: (formData: FormData) => Promise<UploadResult>;
   /** What the customer is paying for, e.g. "booking fee" / "membership". */
   forLabel: string;
+  /** Epoch ms when the held slot expires — shows a live countdown (bookings only). */
+  holdExpiresAt?: number;
+  /** One-line summary of what's being paid for, shown for reassurance. */
+  summaryLine?: string;
   onUploaded: () => void;
 };
+
+/** mm:ss from a millisecond duration (never negative). */
+function fmt(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 export function PaymentScreen({
   id,
@@ -57,12 +70,25 @@ export function PaymentScreen({
   settings,
   uploadAction,
   forLabel,
+  holdExpiresAt,
+  summaryLine,
   onUploaded,
 }: Props) {
   const [copied, setCopied] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Live countdown so the customer can see exactly how long their slot is held.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!holdExpiresAt) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [holdExpiresAt]);
+  const remaining = holdExpiresAt ? holdExpiresAt - now : null;
+  const expired = remaining !== null && remaining <= 0;
+  const urgent = remaining !== null && remaining > 0 && remaining < 60_000;
 
   async function copyUpi() {
     if (!settings.upiId) return;
@@ -120,7 +146,7 @@ export function PaymentScreen({
   }
 
   return (
-    <Card className="p-6 md:p-8 shadow-elegant border-border/60 space-y-6">
+    <Card className="rounded-xl p-6 md:p-8 shadow-elegant border-border/60 space-y-6">
       <div className="text-center">
         <div className="mx-auto mb-3 h-12 w-12 rounded-full bg-primary/10 text-primary grid place-items-center">
           <QrCode className="h-6 w-6" />
@@ -129,15 +155,50 @@ export function PaymentScreen({
         <p className="mt-1 text-sm text-muted-foreground">
           Scan the QR or copy our UPI ID, pay the {forLabel}, then upload your screenshot below.
         </p>
+        {summaryLine && (
+          <p className="mt-2 inline-block rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground">
+            {summaryLine}
+          </p>
+        )}
       </div>
 
       {idField === "appointmentId" && (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/15 px-3 py-2.5 text-sm text-amber-700">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div
+          className={cn(
+            "flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm",
+            expired
+              ? "border-destructive/40 bg-destructive/10 text-destructive"
+              : "border-amber-500/30 bg-amber-500/15 text-amber-600",
+          )}
+        >
+          {expired ? (
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
           <span>
-            Your booking is <span className="font-semibold">not confirmed yet</span>. This slot is
-            held for you for {PENDING_HOLD_MINUTES} minutes — upload your payment screenshot below to
-            keep it. If you leave without uploading, the slot is released for other customers.
+            {remaining !== null && !expired && (
+              <span className="block">
+                Slot held —{" "}
+                <span className={cn("font-semibold tabular-nums", urgent && "text-destructive")}>
+                  {fmt(remaining)} left
+                </span>{" "}
+                to confirm.
+              </span>
+            )}
+            {expired ? (
+              <>
+                Your <span className="font-semibold">5-minute hold has ended</span>. You can still
+                upload your screenshot — if the slot was taken we&apos;ll let you know and refund the
+                fee. Otherwise, please book again.
+              </>
+            ) : (
+              <>
+                Your booking is <span className="font-semibold">not confirmed yet</span> — upload
+                your payment screenshot below to keep this slot. Leaving without uploading releases
+                it for other customers.
+              </>
+            )}
           </span>
         </div>
       )}
@@ -177,7 +238,7 @@ export function PaymentScreen({
             </div>
           </div>
 
-          <div className="rounded-md bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
+          <div className="rounded-lg bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
             <p className="font-medium text-foreground">How to pay</p>
             <p>1. Scan the QR or copy the UPI ID into any UPI app (GPay, PhonePe, Paytm…).</p>
             <p>2. Pay exactly ₹{amount}.</p>

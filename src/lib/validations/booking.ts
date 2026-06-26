@@ -19,7 +19,7 @@ export const bookingFormSchema = z.object({
   appointment_date: z.date({ required_error: "Pick a date" }),
   time_slot: z.string().min(1, "Pick a time slot"),
   service: z.string().min(1, "Choose a service"),
-  staff_name: z.string().min(1, "Choose a stylist"),
+  staff_name: z.string().min(1, "Choose an artist"),
   special_requests: z.string().max(500).optional(),
 });
 export type BookingFormValues = z.infer<typeof bookingFormSchema>;

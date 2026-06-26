@@ -3,7 +3,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { ArrowLeft, ShieldCheck, Building2, User } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Building2, User, Sparkles, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,7 @@ const CONFIG: Record<
   },
   staff: {
     title: "Staff sign in",
-    desc: "Stylist portal",
+    desc: "Artist portal",
     icon: <User className="h-5 w-5" />,
     placeholder: "you@rashi.studio",
   },
@@ -86,13 +86,41 @@ export function PortalLogin({ role }: { role: UserRole }) {
         </div>
       </header>
 
-      <main className="flex-1 flex items-center justify-center px-6 py-12">
-        <Card className="w-full max-w-md p-8 shadow-elegant">
-          <div className="mx-auto mb-3 h-12 w-12 rounded-full bg-primary/10 text-primary grid place-items-center">
+      <main className="flex flex-1 items-center justify-center px-6 py-12">
+        <Card className="w-full max-w-md overflow-hidden p-0 shadow-elegant lg:grid lg:max-w-4xl lg:grid-cols-2">
+          {/* Brand panel — hidden below lg */}
+          <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-hero p-10 text-primary-foreground lg:flex">
+            <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-white/10 blur-2xl" aria-hidden />
+            <div className="absolute -bottom-20 -left-10 h-56 w-56 rounded-full bg-white/10 blur-3xl" aria-hidden />
+            <div className="relative">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur">
+                <Sparkles className="h-3.5 w-3.5" /> Rashi Nail Art Studio
+              </span>
+              <h2 className="mt-6 font-display text-3xl font-semibold leading-tight">
+                Welcome back to your studio dashboard
+              </h2>
+              <p className="mt-3 max-w-xs text-sm text-primary-foreground/80">
+                Manage bookings, payments and your team — all in one beautifully simple place.
+              </p>
+            </div>
+            <ul className="relative space-y-2.5 text-sm text-primary-foreground/90">
+              {["Live booking & payment tracking", "Per-artist schedules & earnings", "Secure manual UPI verification"].map(
+                (f) => (
+                  <li key={f} className="flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" /> {f}
+                  </li>
+                ),
+              )}
+            </ul>
+          </div>
+
+          {/* Form */}
+          <div className="p-8 sm:p-10">
+          <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-xl bg-primary/10 text-primary shadow-soft">
             {cfg.icon}
           </div>
-          <h1 className="font-display text-3xl font-semibold text-center">{cfg.title}</h1>
-          <p className="mt-2 text-sm text-muted-foreground text-center">{cfg.desc}</p>
+          <h1 className="text-center font-display text-3xl font-semibold">{cfg.title}</h1>
+          <p className="mt-2 text-center text-sm text-muted-foreground">{cfg.desc}</p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-4" noValidate>
             <div className="space-y-2">
@@ -131,7 +159,7 @@ export function PortalLogin({ role }: { role: UserRole }) {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-xs text-muted-foreground">
+          <p className="mt-6 border-t border-border/60 pt-5 text-center text-xs text-muted-foreground">
             Not a {role}?{" "}
             {OTHER_PORTALS[role].map((p, i) => (
               <span key={p.href}>
@@ -143,6 +171,7 @@ export function PortalLogin({ role }: { role: UserRole }) {
             ))}{" "}
             login
           </p>
+          </div>
         </Card>
       </main>
     </div>

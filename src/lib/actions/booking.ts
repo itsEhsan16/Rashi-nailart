@@ -144,7 +144,7 @@ export async function createBooking(input: CreateBookingInput) {
   if (!(await staffWorksSlot(admin, d.branch, d.staff_name, d.appointment_date, d.time_slot))) {
     return {
       ok: false as const,
-      error: "That stylist isn't available at the selected time. Please pick another slot, date, or stylist.",
+      error: "That artist isn't available at the selected time. Please pick another slot, date, or artist.",
     };
   }
 
@@ -193,7 +193,7 @@ export async function createBooking(input: CreateBookingInput) {
     if ((aErr as { code?: string }).code === "23505") {
       return {
         ok: false as const,
-        error: "That slot was just booked. Please choose another time or stylist.",
+        error: "That slot was just booked. Please choose another time or artist.",
       };
     }
     return { ok: false as const, error: aErr.message };

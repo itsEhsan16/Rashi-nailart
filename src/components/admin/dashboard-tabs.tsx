@@ -1,6 +1,18 @@
 "use client";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useState } from "react";
+import {
+  LayoutDashboard,
+  CreditCard,
+  CalendarDays,
+  Crown,
+  SlidersHorizontal,
+  Settings,
+  Users,
+} from "lucide-react";
+
+import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { DashboardNav, type NavItem } from "@/components/dashboard/dashboard-nav";
 import type { UserRole } from "@/lib/auth";
 import { BRANCHES } from "@/lib/salon-data";
 import { OverviewPanel } from "./overview-panel";
@@ -14,65 +26,74 @@ import { StaffManager } from "./staff-manager";
 
 type BranchName = (typeof BRANCHES)[number];
 
-export function DashboardTabs({ role, branch }: { role: UserRole; branch: string | null }) {
-  if (role === "admin") {
-    return (
-      <Tabs defaultValue="overview">
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
-          <TabsTrigger value="bookings">Bookings</TabsTrigger>
-          <TabsTrigger value="members">Members</TabsTrigger>
-          <TabsTrigger value="manage">Manage</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-          <TabsTrigger value="team">Team</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview" className="mt-6">
-          <OverviewPanel />
-        </TabsContent>
-        <TabsContent value="payments" className="mt-6">
-          <PaymentsPanel />
-        </TabsContent>
-        <TabsContent value="bookings" className="mt-6">
-          <BookingsPanel role="admin" />
-        </TabsContent>
-        <TabsContent value="members" className="mt-6">
-          <MembersPanel />
-        </TabsContent>
-        <TabsContent value="manage" className="mt-6">
-          <ManagePanel />
-        </TabsContent>
-        <TabsContent value="settings" className="mt-6">
-          <SettingsPanel />
-        </TabsContent>
-        <TabsContent value="team" className="mt-6">
-          <TeamPanel role="admin" branch={null} />
-        </TabsContent>
-      </Tabs>
-    );
-  }
+const ADMIN_NAV: NavItem[] = [
+  { value: "overview", label: "Overview", icon: LayoutDashboard },
+  { value: "payments", label: "Payments", icon: CreditCard },
+  { value: "bookings", label: "Bookings", icon: CalendarDays },
+  { value: "members", label: "Members", icon: Crown },
+  { value: "manage", label: "Manage", icon: SlidersHorizontal },
+  { value: "settings", label: "Settings", icon: Settings },
+  { value: "team", label: "Team", icon: Users },
+];
 
-  // manager
+const MANAGER_NAV: NavItem[] = [
+  { value: "bookings", label: "Bookings", icon: CalendarDays },
+  { value: "members", label: "Members", icon: Crown },
+  { value: "staff", label: "Artists", icon: Users },
+  { value: "team", label: "Team", icon: Settings },
+];
+
+export function DashboardTabs({ role, branch }: { role: UserRole; branch: string | null }) {
+  const isAdmin = role === "admin";
+  const items = isAdmin ? ADMIN_NAV : MANAGER_NAV;
+  const [value, setValue] = useState(items[0].value);
+
   return (
-    <Tabs defaultValue="bookings">
-      <TabsList className="flex-wrap h-auto">
-        <TabsTrigger value="bookings">Bookings</TabsTrigger>
-        <TabsTrigger value="members">Members</TabsTrigger>
-        <TabsTrigger value="staff">Stylists</TabsTrigger>
-        <TabsTrigger value="team">Team</TabsTrigger>
-      </TabsList>
-      <TabsContent value="bookings" className="mt-6">
-        <BookingsPanel role="manager" />
-      </TabsContent>
-      <TabsContent value="members" className="mt-6">
-        <MembersPanel />
-      </TabsContent>
-      <TabsContent value="staff" className="mt-6">
-        <StaffManager lockedBranch={(branch ?? undefined) as BranchName | undefined} />
-      </TabsContent>
-      <TabsContent value="team" className="mt-6">
-        <TeamPanel role="manager" branch={branch} />
-      </TabsContent>
+    <Tabs value={value} onValueChange={setValue} className="md:grid md:grid-cols-[200px_1fr] md:gap-5">
+      <DashboardNav items={items} value={value} onValueChange={setValue} />
+
+      <div className="min-w-0">
+        {isAdmin ? (
+          <>
+            <TabsContent value="overview" className="mt-0">
+              <OverviewPanel />
+            </TabsContent>
+            <TabsContent value="payments" className="mt-0">
+              <PaymentsPanel />
+            </TabsContent>
+            <TabsContent value="bookings" className="mt-0">
+              <BookingsPanel role="admin" />
+            </TabsContent>
+            <TabsContent value="members" className="mt-0">
+              <MembersPanel />
+            </TabsContent>
+            <TabsContent value="manage" className="mt-0">
+              <ManagePanel />
+            </TabsContent>
+            <TabsContent value="settings" className="mt-0">
+              <SettingsPanel />
+            </TabsContent>
+            <TabsContent value="team" className="mt-0">
+              <TeamPanel role="admin" branch={null} />
+            </TabsContent>
+          </>
+        ) : (
+          <>
+            <TabsContent value="bookings" className="mt-0">
+              <BookingsPanel role="manager" />
+            </TabsContent>
+            <TabsContent value="members" className="mt-0">
+              <MembersPanel />
+            </TabsContent>
+            <TabsContent value="staff" className="mt-0">
+              <StaffManager lockedBranch={(branch ?? undefined) as BranchName | undefined} />
+            </TabsContent>
+            <TabsContent value="team" className="mt-0">
+              <TeamPanel role="manager" branch={branch} />
+            </TabsContent>
+          </>
+        )}
+      </div>
     </Tabs>
   );
 }

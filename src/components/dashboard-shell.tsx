@@ -12,21 +12,26 @@ export function DashboardShell({
 }) {
   return (
     <div className="min-h-screen bg-gradient-soft">
-      <header className="border-b border-border/50 bg-background/70 backdrop-blur-md sticky top-0 z-40">
-        <div className="mx-auto max-w-7xl px-6 py-4 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <Logo className="h-9 w-auto" />
-            <div className="text-xs text-muted-foreground capitalize border-l border-border/60 pl-3">
-              {profile.role} panel
-              {profile.branch ? ` · ${profile.branch}` : ""}
-            </div>
+      <header className="border-b border-border/60 bg-background/70 backdrop-blur-md sticky top-0 z-40">
+        <div className="mx-auto max-w-7xl px-6 py-3.5 flex items-center justify-between gap-4">
+          <Link href="/" className="flex items-center gap-3 min-w-0">
+            <Logo className="h-9 w-auto shrink-0" />
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium capitalize text-primary">
+              <span>{profile.role} panel</span>
+              {profile.branch ? (
+                <>
+                  <span aria-hidden className="text-primary/40">·</span>
+                  <span>{profile.branch}</span>
+                </>
+              ) : null}
+            </span>
           </Link>
           <div className="flex items-center gap-3">
-            <div className="text-sm text-muted-foreground hidden sm:block">
-              Signed in as{" "}
-              <span className="font-medium text-foreground">
+            <div className="hidden min-w-0 text-right sm:block">
+              <div className="truncate text-sm font-medium leading-tight text-foreground">
                 {profile.fullName ?? profile.staffName ?? profile.email}
-              </span>
+              </div>
+              <div className="text-xs capitalize text-muted-foreground">Signed in as {profile.role}</div>
             </div>
             <LogoutButton />
           </div>
