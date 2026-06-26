@@ -10,7 +10,7 @@ import {
 const FAQS: { q: string; a: string }[] = [
   {
     q: "How do I book an appointment?",
-    a: "Pick your branch, stylist, date, time and service in the booking form, then pay the ₹50 confirmation fee. Your slot is reserved the moment payment succeeds.",
+    a: "Pick your branch, artist, date, time and service in the booking form, then pay the ₹50 confirmation fee. Your slot is reserved the moment payment succeeds.",
   },
   {
     q: "What is the ₹50 booking fee?",

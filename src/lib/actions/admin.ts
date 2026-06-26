@@ -865,9 +865,9 @@ export async function deleteTimeSlot(input: { id: string }) {
     if ((count ?? 0) > 0)
       return {
         ok: false as const,
-        error: `Can't delete "${slot.label}" — ${count} stylist schedule${
+        error: `Can't delete "${slot.label}" — ${count} artist schedule${
           count === 1 ? "" : "s"
-        } still use it. Remove it from those stylists' weekly schedules first.`,
+        } still use it. Remove it from those artists' weekly schedules first.`,
       };
   }
 
@@ -1135,7 +1135,7 @@ export async function createTeamMember(input: z.infer<typeof createTeamInput>) {
     if (!canonical) {
       return {
         ok: false as const,
-        error: "Pick a stylist from the branch roster (add them under Manage → Stylists first).",
+        error: "Pick an artist from the branch roster (add them under Manage → Artists first).",
       };
     }
     staffName = canonical;

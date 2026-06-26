@@ -24,6 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SectionHeader } from "@/components/dashboard/page-header";
+import { EmptyState } from "@/components/dashboard/empty-state";
 import { cn } from "@/lib/utils";
 import { BRANCHES } from "@/lib/salon-data";
 import {
@@ -89,7 +91,7 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
     });
     setSaving(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success("Stylist added");
+    toast.success("Artist added");
     setName("");
     setStoreNumber("");
     if (!lockedBranch) setBranch("");
@@ -110,7 +112,7 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
     });
     setEditSaving(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success("Store number updated");
+    toast.success("Studio number updated");
     setEditStaff(null);
     void load();
   }
@@ -119,7 +121,7 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
     if (!confirm(`Remove ${n}?`)) return;
     const res = await removeStaff({ id });
     if (!res.ok) return toast.error(res.error);
-    toast.success("Stylist removed");
+    toast.success("Artist removed");
     void load();
   }
 
@@ -191,17 +193,22 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
   }
 
   return (
-    <Card className="p-6">
-      <h3 className="font-display text-xl font-semibold flex items-center gap-2">
-        <UserPlus className="h-5 w-5 text-primary" /> Stylists
-      </h3>
-      <div className="mt-4 flex flex-wrap items-end gap-3">
+    <Card className="rounded-xl p-5 shadow-soft">
+      <SectionHeader
+        title={
+          <span className="flex items-center gap-2">
+            <UserPlus className="h-5 w-5 text-primary" /> Artists
+          </span>
+        }
+        description="Add artists and set their weekly availability."
+      />
+      <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-muted/30 p-4">
         <div className="space-y-1.5 flex-1 min-w-40">
           <Label className="text-xs">Name</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Stylist name" />
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Artist name" />
         </div>
         <div className="space-y-1.5 min-w-40">
-          <Label className="text-xs">Store number</Label>
+          <Label className="text-xs">Studio number</Label>
           <Input
             value={storeNumber}
             onChange={(e) => setStoreNumber(e.target.value)}
@@ -226,30 +233,34 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
           </div>
         )}
         <Button onClick={onAdd} disabled={saving} className="bg-gradient-hero text-primary-foreground">
-          Add stylist
+          Add artist
         </Button>
       </div>
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Set each stylist&apos;s weekly schedule with the calendar button. Stylists with no schedule
+        Set each artist&apos;s weekly schedule with the calendar button. Artists with no schedule
         won&apos;t appear in the booking form.
       </p>
 
       <div className="mt-4 space-y-2">
         {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {!loading && rows.length === 0 && (
-          <p className="text-sm text-muted-foreground">No stylists yet.</p>
+          <EmptyState
+            icon={<UserPlus className="h-6 w-6" />}
+            title="No artists yet"
+            description="Add an artist above, then set their weekly schedule so they appear in the booking form."
+          />
         )}
         {rows.map((s) => (
           <div
             key={s.id}
-            className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2"
+            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-4 py-3 transition-colors hover:border-border hover:bg-muted/40"
           >
             <div className="flex flex-wrap items-center gap-3">
               <span className="font-medium">{s.name}</span>
               <Badge variant="secondary">{s.branch}</Badge>
               {s.store_number && (
-                <span className="text-xs text-muted-foreground">Store: {s.store_number}</span>
+                <span className="text-xs text-muted-foreground">Studio: {s.store_number}</span>
               )}
             </div>
             <div className="flex items-center gap-1">
@@ -257,7 +268,7 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
                 size="icon"
                 variant="ghost"
                 className="h-8 w-8"
-                title="Edit store number"
+                title="Edit studio number"
                 onClick={() => openEdit(s)}
               >
                 <Pencil className="h-4 w-4" />
@@ -303,7 +314,7 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
           ) : (
             <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
               <p className="text-xs text-muted-foreground">
-                Toggle each day this stylist works, then pick the time slots. Customers can only book
+                Toggle each day this artist works, then pick the time slots. Customers can only book
                 the days and slots enabled here.
               </p>
               {DOW.map((label, day) => (
@@ -366,17 +377,17 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
       <Dialog open={!!editStaff} onOpenChange={(o) => !o && setEditStaff(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Store number{editStaff ? ` · ${editStaff.name}` : ""}</DialogTitle>
+            <DialogTitle>Studio number{editStaff ? ` · ${editStaff.name}` : ""}</DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label className="text-xs">Store number</Label>
+            <Label className="text-xs">Studio number</Label>
             <Input
               value={editStoreNumber}
               onChange={(e) => setEditStoreNumber(e.target.value)}
-              placeholder="Shown to customers who pick this stylist"
+              placeholder="Shown to customers who pick this artist"
             />
             <p className="text-xs text-muted-foreground">
-              Leave blank to remove it. Customers see this once they select this stylist.
+              Leave blank to remove it. Customers see this once they select this artist.
             </p>
           </div>
           <DialogFooter>
