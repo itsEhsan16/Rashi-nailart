@@ -14,6 +14,7 @@ import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
 import { fulfillMembershipPayment, type MembershipPayment } from "@/lib/payments-core";
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { notifyCustomer } from "@/lib/notify";
+import { UPI_VPA_RE } from "@/lib/upi";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -497,7 +498,13 @@ export async function getAppSettings() {
 }
 
 const settingsInput = z.object({
-  upi_id: z.string().trim().max(120),
+  // Empty is allowed (the pay button + copy row just hide); a non-empty value
+  // must be a well-formed VPA so it can't corrupt or inject into the UPI link.
+  upi_id: z
+    .string()
+    .trim()
+    .max(120)
+    .refine((v) => v === "" || UPI_VPA_RE.test(v), "Enter a valid UPI ID like name@bank"),
   payee_name: z.string().trim().min(1).max(120),
   upi_qr_url: z
     .string()

@@ -4,7 +4,8 @@ import { CalendarDays } from "lucide-react";
 
 import { EmptyState } from "@/components/dashboard/empty-state";
 import type { BookingRow } from "@/lib/actions/admin";
-import { sortTasks, taskStateOf, type TaskState } from "./staff-metrics";
+import { sortBySchedule } from "@/lib/booking-sort";
+import { taskStateOf, type TaskState } from "./staff-metrics";
 import { TaskCard } from "./task-card";
 
 const GROUP_LABEL: Record<TaskState, string> = {
@@ -36,7 +37,7 @@ export function StaffTaskList({
     );
   }
 
-  const sorted = sortTasks(rows, now);
+  const sorted = sortBySchedule(rows, now);
   let lastGroup: TaskState | null = null;
 
   return (

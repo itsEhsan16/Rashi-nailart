@@ -109,7 +109,7 @@ export function PaymentsPanel() {
   }
 
   const verifyButtons = (r: VerificationRow) => (
-    <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+    <div className="flex flex-wrap items-center justify-end gap-1">
       <Button
         size="sm"
         className="bg-emerald-600 text-white hover:bg-emerald-700"
@@ -256,7 +256,7 @@ export function PaymentsPanel() {
                 <span>{r.service}</span>
               )}
             </div>
-            <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3">
               <Button size="sm" variant="outline" onClick={() => viewProof(r)} disabled={!r.has_proof}>
                 <ImageIcon className="mr-1 h-4 w-4" /> View
               </Button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Crown, Loader2, CheckCircle2 } from "lucide-react";
@@ -25,6 +25,13 @@ import { PaymentScreen } from "@/components/booking/payment-screen";
 import type { PaymentSettings } from "@/lib/actions/booking";
 
 type Pending = { paymentId: string; amount: number; settings: PaymentSettings };
+type StoredPending = Pending & { createdAt: number };
+
+const PENDING_KEY = "rashi:pending-membership";
+// Memberships have no slot to hold, so we keep the in-flight payment around for a
+// generous window — long enough to leave for the UPI app (where a mobile browser,
+// esp. iOS Safari, may discard the backgrounded tab) and return to upload proof.
+const PENDING_TTL_MS = 6 * 60 * 60 * 1000;
 
 export function MembershipDialog({ price }: { price: number }) {
   const [open, setOpen] = useState(false);
@@ -41,9 +48,38 @@ export function MembershipDialog({ price }: { price: number }) {
     defaultValues: { client_name: "", phone: "" },
   });
 
+  // Persist the in-flight payment so it survives the UPI app-switch the "Pay in
+  // your UPI app" button invites — and restore it on return, reopening straight
+  // to the upload step so the customer can still submit their screenshot.
+  const persistPending = useCallback((p: Pending | null) => {
+    setPending(p);
+    try {
+      if (p) localStorage.setItem(PENDING_KEY, JSON.stringify({ ...p, createdAt: Date.now() }));
+      else localStorage.removeItem(PENDING_KEY);
+    } catch {
+      /* storage may be unavailable */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PENDING_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as StoredPending;
+      if (Date.now() - (saved.createdAt ?? 0) < PENDING_TTL_MS) {
+        setPending({ paymentId: saved.paymentId, amount: saved.amount, settings: saved.settings });
+        setOpen(true);
+      } else {
+        localStorage.removeItem(PENDING_KEY);
+      }
+    } catch {
+      /* ignore malformed storage */
+    }
+  }, []);
+
   function resetAll() {
     reset();
-    setPending(null);
+    persistPending(null);
     setDone(false);
   }
 
@@ -55,7 +91,7 @@ export function MembershipDialog({ price }: { price: number }) {
         toast.error(res.error);
         return;
       }
-      setPending({ paymentId: res.paymentId, amount: res.amount, settings: res.settings });
+      persistPending({ paymentId: res.paymentId, amount: res.amount, settings: res.settings });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Something went wrong");
     } finally {
@@ -104,7 +140,10 @@ export function MembershipDialog({ price }: { price: number }) {
               settings={pending.settings}
               uploadAction={uploadMembershipProof}
               forLabel="membership fee"
-              onUploaded={() => setDone(true)}
+              onUploaded={() => {
+                setDone(true);
+                persistPending(null);
+              }}
             />
           </>
         ) : (

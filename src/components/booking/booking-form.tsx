@@ -368,6 +368,10 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
               We&apos;ve received your screenshot and will verify your ₹{bookingFee} payment. Nothing
               more to pay online — just arrive at your slot. Pay the balance at the studio.
             </p>
+            <p className="mt-2">
+              Rescheduling isn&apos;t possible. If you miss this appointment, the ₹{bookingFee}{" "}
+              fee won&apos;t be refunded and you&apos;ll need to book again.
+            </p>
           </div>
           <Button className="mt-6" variant="outline" onClick={clearConfirmed}>
             Book another appointment
@@ -552,6 +556,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                   {filteredStaff.map((s) => (
                     <SelectItem key={s.name} value={s.name}>
                       {s.name}
+                      {s.storeNumber && (
+                        <span className="ml-2 text-muted-foreground">· Studio {s.storeNumber}</span>
+                      )}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -560,11 +567,6 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           />
           {noStylistsForDate && (
             <p className="text-sm text-muted-foreground">No slots available for this date.</p>
-          )}
-          {selectedStaff?.storeNumber && (
-            <p className="text-xs text-muted-foreground">
-              Studio number: <span className="font-medium text-foreground">{selectedStaff.storeNumber}</span>
-            </p>
           )}
           {errors.staff_name && (
             <p className="text-xs text-destructive">{errors.staff_name.message}</p>

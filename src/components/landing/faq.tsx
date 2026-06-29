@@ -22,7 +22,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "Can I reschedule or cancel?",
-    a: "Yes — please contact your branch and we'll move your appointment to another available slot.",
+    a: "Rescheduling isn't possible. If you miss your appointment, the ₹50 confirmation fee won't be refunded and you'll need to book again.",
   },
   {
     q: "Where are you located?",
