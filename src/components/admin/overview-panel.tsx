@@ -12,18 +12,22 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { IndianRupee, CalendarCheck, Crown, TrendingUp, Clock, CheckCircle2, Hourglass } from "lucide-react";
+import { IndianRupee, CalendarCheck, Crown, TrendingUp, Clock, CheckCircle2, Hourglass, PieChart } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { SectionHeader } from "@/components/dashboard/page-header";
 import { getAdminOverview, type Overview } from "@/lib/actions/admin";
+import { RevenueBreakdownDialog } from "./revenue-breakdown-dialog";
+import { StaffEarningsTable } from "./staff-earnings-table";
 
 export function OverviewPanel() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
 
   useEffect(() => {
     getAdminOverview()
@@ -57,7 +61,7 @@ export function OverviewPanel() {
           value={inr(data.totalRevenue)}
           icon={<IndianRupee className="h-5 w-5" />}
           accent="primary"
-          hint={`${inr(data.feeRevenue)} fees · ${inr(data.membershipRevenue)} memberships`}
+          hint={`${inr(data.breakdown.serviceCharges + data.breakdown.extras)} services+extras · ${inr(data.feeRevenue)} fees · ${inr(data.membershipRevenue)} members`}
         />
         <StatCard label="Bookings today" value={String(data.bookingsToday)} icon={<CalendarCheck className="h-5 w-5" />} accent="primary" hint="confirmed appointments" />
         <StatCard label="This week" value={String(data.bookingsWeek)} icon={<TrendingUp className="h-5 w-5" />} accent="primary" hint={`${data.bookingsMonth} this month`} />
@@ -85,6 +89,16 @@ export function OverviewPanel() {
         />
       </div>
 
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => setBreakdownOpen(true)}>
+          <PieChart className="mr-1 h-4 w-4" /> Revenue breakdown
+        </Button>
+      </div>
+
+      <Card className="p-5">
+        <SectionHeader title="Earnings by artist" className="mb-4" />
+        <StaffEarningsTable rows={data.staffStats} />
+      </Card>
 
       <Card className="p-5">
         <SectionHeader title="Revenue · last 14 days" className="mb-4" />
@@ -140,6 +154,12 @@ export function OverviewPanel() {
           </ResponsiveContainer>
         </div>
       </Card>
+
+      <RevenueBreakdownDialog
+        open={breakdownOpen}
+        onOpenChange={setBreakdownOpen}
+        breakdown={data.breakdown}
+      />
     </div>
   );
 }

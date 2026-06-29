@@ -48,12 +48,14 @@ export type BookingRow = {
   discount_applied: number;
   completed: boolean;
   created_at: string;
+  /** How the in-store balance (price + extras) was settled. null = unrecorded. */
+  payment_mode: "upi" | "cash" | null;
   /** Sum of staff-added extra line items (₹). Computed, not an appointments column. */
   extras_total: number;
 };
 
 const BOOKING_COLUMNS =
-  "id, client_name, phone, branch, appointment_date, time_slot, service, price, amount, staff_name, special_requests, payment_status, upi_screenshot_url, uploaded_at, verified_at, rejection_reason, is_member, discount_applied, completed, created_at";
+  "id, client_name, phone, branch, appointment_date, time_slot, service, price, amount, staff_name, special_requests, payment_status, upi_screenshot_url, uploaded_at, verified_at, rejection_reason, is_member, discount_applied, completed, created_at, payment_mode";
 
 const filtersSchema = z.object({
   date: z.string().optional(),
@@ -103,15 +105,7 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
 
   // Attach each booking's extras total in one batched query (avoids N+1).
   if (bookings.length) {
-    const ids = bookings.map((b) => b.id);
-    const { data: exData } = await admin
-      .from("appointment_extras")
-      .select("appointment_id, amount")
-      .in("appointment_id", ids);
-    const totals = new Map<string, number>();
-    for (const e of (exData as { appointment_id: string; amount: number }[] | null) ?? []) {
-      totals.set(e.appointment_id, (totals.get(e.appointment_id) ?? 0) + (e.amount ?? 0));
-    }
+    const totals = await extrasTotalsFor(admin, bookings.map((b) => b.id));
     bookings = bookings.map((b) => ({ ...b, extras_total: totals.get(b.id) ?? 0 }));
   }
 
@@ -138,6 +132,20 @@ async function scopedAppointmentMatch(admin: Admin, profile: AuthProfile, id: st
   return row.staff_name.toLowerCase() === (profile.staffName ?? "").toLowerCase();
 }
 
+/** Sum appointment_extras.amount per appointment id in one batched query. */
+async function extrasTotalsFor(admin: Admin, apptIds: string[]): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  if (!apptIds.length) return totals;
+  const { data } = await admin
+    .from("appointment_extras")
+    .select("appointment_id, amount")
+    .in("appointment_id", apptIds);
+  for (const e of (data as { appointment_id: string; amount: number }[] | null) ?? []) {
+    totals.set(e.appointment_id, (totals.get(e.appointment_id) ?? 0) + (e.amount ?? 0));
+  }
+  return totals;
+}
+
 export async function completeBooking(input: { id: string }) {
   const profile = await requireRole(["admin", "manager", "staff"]);
   if (!profile) return UNAUTHORIZED;
@@ -148,6 +156,28 @@ export async function completeBooking(input: { id: string }) {
   const { error } = await admin
     .from("appointments")
     .update({ completed: true, completed_at: new Date().toISOString() })
+    .eq("id", parsed.data.id);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+const paymentModeInput = z.object({
+  id: z.string().uuid(),
+  mode: z.enum(["upi", "cash"]).nullable(), // null clears a previously-set mode
+});
+
+/** Record how the customer settled the in-store balance (price + extras). Staff,
+ *  manager and admin may set it on a booking they're scoped to. */
+export async function setBookingPaymentMode(input: z.infer<typeof paymentModeInput>) {
+  const profile = await requireRole(["admin", "manager", "staff"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = paymentModeInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid payment mode" };
+  const admin = createAdminClient();
+  if (!(await scopedAppointmentMatch(admin, profile, parsed.data.id))) return UNAUTHORIZED;
+  const { error } = await admin
+    .from("appointments")
+    .update({ payment_mode: parsed.data.mode })
     .eq("id", parsed.data.id);
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
@@ -579,6 +609,93 @@ export async function uploadQrImage(formData: FormData) {
 }
 
 // ─────────────────────────────── Overview ───────────────────────────────────
+
+/** Per-artist completed-work rollup (mirrors staff-metrics earnedAmount). */
+export type StaffEarning = {
+  staffName: string;
+  completed: number; // completed && verified bookings
+  serviceRevenue: number; // Σ price
+  extrasRevenue: number; // Σ extras
+  earnings: number; // service + extras
+};
+
+/** Where total revenue comes from. `upi + cash + unrecorded === serviceCharges + extras`. */
+export type RevenueBreakdown = {
+  bookingFees: number; // verified bookings × ₹50 amount
+  serviceCharges: number; // completed+verified × price
+  extras: number; // completed+verified × extras
+  memberships: number; // verified membership payments (0 for a branch view)
+  upi: number; // in-store balance settled by UPI
+  cash: number; // in-store balance settled by cash
+  unrecorded: number; // completed but payment_mode not yet set
+};
+
+type VerifiedAppt = {
+  id: string;
+  branch: string;
+  amount: number;
+  price: number;
+  staff_name: string;
+  completed: boolean;
+  payment_mode: string | null;
+};
+
+/**
+ * Pure revenue/earnings aggregation shared by the admin (all branches) and
+ * manager (one branch) overviews. Booking fees count for every verified
+ * booking; service charges + extras count only once the booking is completed
+ * (money actually collected in-store). `membershipRevenue` is salon-wide and
+ * supplied by the caller (0 for a branch view).
+ */
+function aggregateRevenue(
+  verified: VerifiedAppt[],
+  extrasByAppt: Map<string, number>,
+  membershipRevenue: number,
+): { breakdown: RevenueBreakdown; staffStats: StaffEarning[]; totalRevenue: number } {
+  const bookingFees = verified.reduce((s, a) => s + (a.amount ?? 0), 0);
+
+  let serviceCharges = 0;
+  let extras = 0;
+  let upi = 0;
+  let cash = 0;
+  let unrecorded = 0;
+  const byStaff = new Map<string, StaffEarning>();
+
+  for (const a of verified) {
+    if (!a.completed) continue; // service + extras realised only when done
+    const ex = extrasByAppt.get(a.id) ?? 0;
+    const earned = (a.price ?? 0) + ex;
+    serviceCharges += a.price ?? 0;
+    extras += ex;
+    if (a.payment_mode === "upi") upi += earned;
+    else if (a.payment_mode === "cash") cash += earned;
+    else unrecorded += earned;
+
+    const key = a.staff_name?.trim() || "Unassigned";
+    const cur =
+      byStaff.get(key) ??
+      { staffName: key, completed: 0, serviceRevenue: 0, extrasRevenue: 0, earnings: 0 };
+    cur.completed += 1;
+    cur.serviceRevenue += a.price ?? 0;
+    cur.extrasRevenue += ex;
+    cur.earnings += earned;
+    byStaff.set(key, cur);
+  }
+
+  const breakdown: RevenueBreakdown = {
+    bookingFees,
+    serviceCharges,
+    extras,
+    memberships: membershipRevenue,
+    upi,
+    cash,
+    unrecorded,
+  };
+  const totalRevenue = bookingFees + serviceCharges + extras + membershipRevenue;
+  const staffStats = [...byStaff.values()].sort((a, b) => b.earnings - a.earnings);
+  return { breakdown, staffStats, totalRevenue };
+}
+
 export type Overview = {
   totalRevenue: number;
   feeRevenue: number;
@@ -592,7 +709,37 @@ export type Overview = {
   pendingSessions: number;
   revenueByDay: { date: string; fees: number; memberships: number }[];
   bookingsByBranch: { branch: string; count: number }[];
+  breakdown: RevenueBreakdown;
+  staffStats: StaffEarning[];
 };
+
+/** Manager dashboard: branch-scoped revenue + per-artist rollup (no memberships,
+ *  which are salon-wide, and none of the admin-only counts). */
+export type ManagerOverview = {
+  branch: string;
+  totalRevenue: number;
+  breakdown: RevenueBreakdown;
+  staffStats: StaffEarning[];
+};
+
+export async function getManagerOverview() {
+  const profile = await requireRole(["manager"]);
+  if (!profile) return { ...UNAUTHORIZED, overview: null };
+  if (!profile.branch) return { ok: false as const, error: "No branch assigned", overview: null };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("appointments")
+    .select("id, branch, amount, price, staff_name, completed, payment_mode")
+    .eq("payment_status", "verified")
+    .eq("branch", profile.branch);
+  if (error) return { ok: false as const, error: error.message, overview: null };
+  const verified = (data as VerifiedAppt[] | null) ?? [];
+  const completedIds = verified.filter((a) => a.completed).map((a) => a.id);
+  const extrasByAppt = await extrasTotalsFor(admin, completedIds);
+  const { breakdown, staffStats, totalRevenue } = aggregateRevenue(verified, extrasByAppt, 0);
+  const overview: ManagerOverview = { branch: profile.branch, totalRevenue, breakdown, staffStats };
+  return { ok: true as const, overview };
+}
 
 export async function getAdminOverview() {
   const profile = await requireRole(["admin"]);
@@ -607,10 +754,12 @@ export async function getAdminOverview() {
         .select("amount, created_at")
         .eq("purpose", "membership")
         .eq("status", "verified"),
-      // confirmed bookings: verified only (fee revenue derives from these)
+      // confirmed bookings: verified only (fees from all; service+extras from completed)
       admin
         .from("appointments")
-        .select("appointment_date, branch, amount, verified_at")
+        .select(
+          "id, appointment_date, branch, amount, price, staff_name, completed, payment_mode, verified_at",
+        )
         .eq("payment_status", "verified"),
       admin.from("memberships").select("id").eq("active", true),
       admin.from("appointments").select("id", { count: "exact", head: true }).eq("payment_status", "payment_uploaded"),
@@ -631,7 +780,7 @@ export async function getAdminOverview() {
   const memberPays = (memberPayRes.data as { amount: number; created_at: string }[] | null) ?? [];
   const appts =
     (apptRes.data as
-      | { appointment_date: string; branch: string; amount: number; verified_at: string | null }[]
+      | (VerifiedAppt & { appointment_date: string; verified_at: string | null })[]
       | null) ?? [];
   const members = (memRes.data as { id: string }[] | null) ?? [];
   const pendingVerification = (pendingApptRes.count ?? 0) + (pendingMemRes.count ?? 0);
@@ -672,8 +821,17 @@ export async function getAdminOverview() {
   for (const a of appts) branchCounts.set(a.branch, (branchCounts.get(a.branch) ?? 0) + 1);
   const bookingsByBranch = [...branchCounts.entries()].map(([branch, count]) => ({ branch, count }));
 
+  // Full revenue (fees + service + extras + memberships) and per-artist rollup.
+  const completedIds = appts.filter((a) => a.completed).map((a) => a.id);
+  const extrasByAppt = await extrasTotalsFor(admin, completedIds);
+  const { breakdown, staffStats, totalRevenue } = aggregateRevenue(
+    appts,
+    extrasByAppt,
+    membershipRevenue,
+  );
+
   const overview: Overview = {
-    totalRevenue: feeRevenue + membershipRevenue,
+    totalRevenue,
     feeRevenue,
     membershipRevenue,
     pendingVerification,
@@ -685,6 +843,8 @@ export async function getAdminOverview() {
     pendingSessions,
     revenueByDay,
     bookingsByBranch,
+    breakdown,
+    staffStats,
   };
   return { ok: true as const, overview };
 }

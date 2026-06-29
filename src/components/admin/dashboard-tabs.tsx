@@ -16,6 +16,7 @@ import { DashboardNav, type NavItem } from "@/components/dashboard/dashboard-nav
 import type { UserRole } from "@/lib/auth";
 import { BRANCHES } from "@/lib/salon-data";
 import { OverviewPanel } from "./overview-panel";
+import { ManagerOverviewPanel } from "./manager-overview-panel";
 import { BookingsPanel } from "./bookings-panel";
 import { PaymentsPanel } from "./payments-panel";
 import { SettingsPanel } from "./settings-panel";
@@ -37,6 +38,7 @@ const ADMIN_NAV: NavItem[] = [
 ];
 
 const MANAGER_NAV: NavItem[] = [
+  { value: "overview", label: "Overview", icon: LayoutDashboard },
   { value: "bookings", label: "Bookings", icon: CalendarDays },
   { value: "members", label: "Members", icon: Crown },
   { value: "staff", label: "Artists", icon: Users },
@@ -79,6 +81,9 @@ export function DashboardTabs({ role, branch }: { role: UserRole; branch: string
           </>
         ) : (
           <>
+            <TabsContent value="overview" className="mt-0">
+              <ManagerOverviewPanel />
+            </TabsContent>
             <TabsContent value="bookings" className="mt-0">
               <BookingsPanel role="manager" />
             </TabsContent>

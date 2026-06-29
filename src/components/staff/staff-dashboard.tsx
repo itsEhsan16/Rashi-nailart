@@ -6,12 +6,14 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { ExtrasDialog } from "@/components/dashboard/extras-dialog";
 import { listBookings, completeBooking, type BookingRow } from "@/lib/actions/admin";
 import { computeStaffStats } from "./staff-metrics";
 import { StaffStatsRow } from "./staff-stats";
 import { StaffTaskList } from "./staff-task-list";
+import { StaffCompletedList } from "./staff-completed-list";
 
 export function StaffDashboard({ greetingName }: { greetingName: string }) {
   const [rows, setRows] = useState<BookingRow[]>([]);
@@ -50,6 +52,9 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
     () => rows.filter((r) => r.payment_status !== "rejected" && r.payment_status !== "cancelled"),
     [rows],
   );
+  // Active work stays in the main list; finished tasks move to the Completed folder.
+  const activeRows = useMemo(() => taskRows.filter((r) => !r.completed), [taskRows]);
+  const completedRows = useMemo(() => taskRows.filter((r) => r.completed), [taskRows]);
 
   async function onComplete(id: string) {
     setBusyId(id);
@@ -80,8 +85,8 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
 
       {loading ? (
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-3">
-            {Array.from({ length: 3 }).map((_, i) => (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-20 rounded-xl" />
             ))}
           </div>
@@ -94,13 +99,28 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
       ) : (
         <>
           <StaffStatsRow stats={stats} />
-          <StaffTaskList
-            rows={taskRows}
-            now={now}
-            busyId={busyId}
-            onComplete={onComplete}
-            onOpenExtras={setExtrasFor}
-          />
+          <Tabs defaultValue="tasks">
+            <TabsList>
+              <TabsTrigger value="tasks">
+                Tasks{activeRows.length > 0 ? ` (${activeRows.length})` : ""}
+              </TabsTrigger>
+              <TabsTrigger value="completed">
+                Completed{completedRows.length > 0 ? ` (${completedRows.length})` : ""}
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="tasks">
+              <StaffTaskList
+                rows={activeRows}
+                now={now}
+                busyId={busyId}
+                onComplete={onComplete}
+                onOpenExtras={setExtrasFor}
+              />
+            </TabsContent>
+            <TabsContent value="completed">
+              <StaffCompletedList rows={completedRows} now={now} onOpenExtras={setExtrasFor} />
+            </TabsContent>
+          </Tabs>
         </>
       )}
 
