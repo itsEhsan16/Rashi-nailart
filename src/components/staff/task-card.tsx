@@ -1,7 +1,7 @@
 "use client";
 
 import { format } from "date-fns";
-import { CheckCircle2, Clock, MapPin, Receipt, Loader2 } from "lucide-react";
+import { Banknote, CheckCircle2, Clock, MapPin, Receipt, Smartphone, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,8 +33,8 @@ export function TaskCard({
       className={cn(
         "relative overflow-hidden p-3.5 pl-4 shadow-soft transition-shadow hover:shadow-elegant",
         isNow && "ring-1 ring-primary/40",
-        // Done tasks are de-emphasised — lightly blurred + dimmed — and locked from edits.
-        isDone && "bg-emerald-500/5 opacity-60 blur-[1.5px]",
+        // Done tasks live in their own Completed folder — shown clearly there, and locked from edits.
+        isDone && "bg-emerald-500/5",
       )}
     >
       <span
@@ -70,6 +70,24 @@ export function TaskCard({
           <MapPin className="h-3.5 w-3.5" />
           {row.branch}
         </span>
+        {row.payment_mode && (
+          <Badge
+            variant="outline"
+            className={cn(
+              "gap-1",
+              row.payment_mode === "cash"
+                ? "border-amber-500/40 text-amber-600"
+                : "border-sky-500/40 text-sky-600",
+            )}
+          >
+            {row.payment_mode === "cash" ? (
+              <Banknote className="h-3 w-3" />
+            ) : (
+              <Smartphone className="h-3 w-3" />
+            )}
+            {row.payment_mode === "upi" ? "UPI" : "Cash"}
+          </Badge>
+        )}
         <span className="ml-auto font-semibold text-foreground">
           ₹{total.toLocaleString("en-IN")}
           {row.extras_total > 0 && (
@@ -80,7 +98,7 @@ export function TaskCard({
         </span>
       </div>
 
-      {/* Actions disappear once the task is done — a completed booking is locked. */}
+      {/* Active work: add extras and mark done. */}
       {row.payment_status === "verified" && !row.completed && (
         <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-2.5">
           <Button size="sm" variant="outline" onClick={() => onOpenExtras(row)}>
@@ -93,6 +111,20 @@ export function TaskCard({
               <CheckCircle2 className="mr-1 h-4 w-4" />
             )}
             Done
+          </Button>
+        </div>
+      )}
+
+      {/* Done: still let staff review extras and record how the customer paid. */}
+      {row.completed && (
+        <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-2.5">
+          <Button
+            size="sm"
+            variant={row.payment_mode ? "outline" : "default"}
+            onClick={() => onOpenExtras(row)}
+          >
+            <Receipt className="mr-1 h-4 w-4" />
+            {row.payment_mode ? "Receipt" : "Add payment"}
           </Button>
         </div>
       )}

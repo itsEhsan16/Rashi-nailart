@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Banknote, Loader2, Plus, Smartphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   Dialog,
   DialogContent,
@@ -18,9 +19,12 @@ import {
   addAppointmentExtra,
   deleteAppointmentExtra,
   listAppointmentExtras,
+  setBookingPaymentMode,
   type BookingRow,
   type ExtraRow,
 } from "@/lib/actions/admin";
+
+type PayMode = "upi" | "cash";
 
 /**
  * Add/remove in-studio extra line items for a booking. Self-contained: owns its
@@ -41,6 +45,8 @@ export function ExtrasDialog({
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<PayMode | null>(null);
+  const [savingMode, setSavingMode] = useState(false);
   const extrasSum = extras.reduce((s, e) => s + e.amount, 0);
 
   const load = useCallback(async (appointmentId: string) => {
@@ -59,8 +65,23 @@ export function ExtrasDialog({
     setExtras([]);
     setLabel("");
     setAmount("");
+    setMode(booking.payment_mode);
     void load(booking.id);
   }, [booking, load]);
+
+  async function onSetMode(next: PayMode | null) {
+    if (!booking) return;
+    const prev = mode;
+    setMode(next); // optimistic
+    setSavingMode(true);
+    const res = await setBookingPaymentMode({ id: booking.id, mode: next });
+    setSavingMode(false);
+    if (!res.ok) {
+      setMode(prev);
+      return toast.error(res.error);
+    }
+    onChanged?.();
+  }
 
   async function onAdd() {
     if (!booking) return;
@@ -131,12 +152,41 @@ export function ExtrasDialog({
             </ul>
           )}
 
-          {extras.length > 0 && (
-            <div className="flex items-center justify-between border-t border-border/60 pt-2 text-sm">
-              <span className="text-muted-foreground">Total (base + extras)</span>
-              <span className="font-semibold">₹{(booking?.price ?? 0) + extrasSum}</span>
+          <div className="space-y-2 border-t border-border/60 pt-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Total paid in-store</span>
+              <span className="font-semibold">
+                ₹{(booking?.price ?? 0) + extrasSum}
+                {extrasSum > 0 && (
+                  <span className="ml-1 text-xs font-normal text-muted-foreground">
+                    (₹{booking?.price} + ₹{extrasSum})
+                  </span>
+                )}
+              </span>
             </div>
-          )}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">How did the customer pay?</span>
+              <div className="flex items-center gap-2">
+                {savingMode && (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                )}
+                <ToggleGroup
+                  type="single"
+                  size="sm"
+                  variant="outline"
+                  value={mode ?? ""}
+                  onValueChange={(v) => onSetMode(v === "" ? null : (v as PayMode))}
+                >
+                  <ToggleGroupItem value="upi" className="gap-1 px-3" aria-label="Paid by UPI">
+                    <Smartphone className="h-3.5 w-3.5" /> UPI
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="cash" className="gap-1 px-3" aria-label="Paid by cash">
+                    <Banknote className="h-3.5 w-3.5" /> Cash
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+            </div>
+          </div>
 
           <div className="flex items-end gap-2 border-t border-border/60 pt-3">
             <div className="flex-1 space-y-1">
