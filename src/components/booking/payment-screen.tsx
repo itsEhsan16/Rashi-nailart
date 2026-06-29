@@ -2,14 +2,32 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { Copy, Check, Loader2, Upload, QrCode, ShieldCheck, AlertTriangle, Clock } from "lucide-react";
+import {
+  Copy,
+  Check,
+  Loader2,
+  Upload,
+  QrCode,
+  ShieldCheck,
+  AlertTriangle,
+  Clock,
+  Smartphone,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
+import { buildUpiLink, buildUpiAppLink, UPI_APPS } from "@/lib/upi";
+import { UpiAppLogo } from "@/components/booking/upi-app-logos";
 import type { PaymentSettings } from "@/lib/actions/booking";
 
 type UploadResult = { ok: true } | { ok: false; error?: string };
@@ -75,6 +93,18 @@ export function PaymentScreen({
   onUploaded,
 }: Props) {
   const [copied, setCopied] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  // iOS has no UPI app chooser for the generic upi:// scheme (whichever app
+  // registered it — often WhatsApp — silently owns it), so there we offer per-app
+  // buttons instead. Resolved after mount to avoid an SSR/hydration mismatch.
+  const [isIOS, setIsIOS] = useState(false);
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    setIsIOS(
+      /iPad|iPhone|iPod/.test(ua) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1),
+    );
+  }, []);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -89,6 +119,23 @@ export function PaymentScreen({
   const remaining = holdExpiresAt ? holdExpiresAt - now : null;
   const expired = remaining !== null && remaining <= 0;
   const urgent = remaining !== null && remaining > 0 && remaining < 60_000;
+
+  // Deep link that opens the customer's UPI app with our VPA + amount pre-filled.
+  // Null when no UPI ID is configured — then only the QR + copy fallback show.
+  const upiArgs = {
+    upiId: settings.upiId,
+    payeeName: settings.payeeName,
+    amount,
+    note: `Rashi ${forLabel}`,
+  };
+  const upiLink = buildUpiLink(upiArgs);
+  // Per-app deep links for iOS. Valid whenever upiLink is (same VPA check).
+  const appLinks = UPI_APPS.map((a) => ({ ...a, href: buildUpiAppLink(a.scheme, upiArgs) })).filter(
+    (a): a is typeof a & { href: string } => a.href !== null,
+  );
+
+  const notifyOpening = () =>
+    toast("Opening your UPI app… if nothing happens, scan the QR or copy the UPI ID below.");
 
   async function copyUpi() {
     if (!settings.upiId) return;
@@ -153,7 +200,9 @@ export function PaymentScreen({
         </div>
         <h3 className="font-display text-2xl font-semibold">Pay ₹{amount} to confirm</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Scan the QR or copy our UPI ID, pay the {forLabel}, then upload your screenshot below.
+          {settings.upiId
+            ? `Pay the ${forLabel} with the QR or your UPI ID, then upload your screenshot below.`
+            : `Scan the QR to pay the ${forLabel}, then upload your screenshot below.`}
         </p>
         {summaryLine && (
           <p className="mt-2 inline-block rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground">
@@ -203,47 +252,93 @@ export function PaymentScreen({
         </div>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2 md:items-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="rounded-xl border border-border/60 bg-white p-4">
-            <Image
-              src={settings.qrUrl}
-              alt="UPI QR code"
-              width={320}
-              height={320}
-              className="h-64 w-64 object-contain sm:h-72 sm:w-72"
-              unoptimized
-            />
-          </div>
-          <span className="text-xs text-muted-foreground">Paying {settings.payeeName}</span>
-        </div>
-
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-xs">UPI ID</Label>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 truncate rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-sm">
-                {settings.upiId || "Not configured yet"}
-              </code>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={copyUpi}
-                disabled={!settings.upiId}
-                title="Copy UPI ID"
-              >
-                {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+      {upiLink && (
+        <div className="space-y-1.5">
+          {isIOS ? (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                {appLinks.map((a) => (
+                  <a
+                    key={a.key}
+                    href={a.href}
+                    onClick={notifyOpening}
+                    className="group flex flex-col items-center justify-center gap-2 rounded-xl border border-border/60 bg-background px-2 py-3.5 shadow-soft transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-elegant focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:translate-y-0"
+                  >
+                    <UpiAppLogo
+                      appKey={a.key}
+                      className="h-8 w-8 drop-shadow-sm transition-transform group-hover:scale-110"
+                    />
+                    <span className="text-xs font-medium text-foreground">{a.label}</span>
+                  </a>
+                ))}
+              </div>
+              <p className="text-center text-xs text-muted-foreground">
+                Tap your UPI app to pay ₹{amount}. If it doesn&apos;t open (Google Pay sometimes
+                won&apos;t on iPhone), scan the QR or copy the UPI ID below.
+              </p>
+            </>
+          ) : (
+            <>
+              <Button asChild className="h-12 w-full text-base">
+                <a href={upiLink} onClick={notifyOpening}>
+                  <Smartphone className="mr-2 h-4 w-4" /> Pay ₹{amount} in your UPI app
+                </a>
               </Button>
-            </div>
-          </div>
+              <p className="text-center text-xs text-muted-foreground">
+                Works in most UPI apps on Android (GPay, PhonePe, Paytm…). On a computer, scan the QR
+                or copy the UPI ID below instead.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
-          <div className="rounded-lg bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">How to pay</p>
-            <p>1. Scan the QR or copy the UPI ID into any UPI app (GPay, PhonePe, Paytm…).</p>
-            <p>2. Pay exactly ₹{amount}.</p>
-            <p>3. Screenshot the success page and upload it below.</p>
+      {/* The QR is collapsed behind a button — tap "Scan QR code" to open it. */}
+      <div className="space-y-3">
+        {upiLink && (
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            or pay manually
+            <span className="h-px flex-1 bg-border" />
           </div>
+        )}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            onClick={() => setQrOpen(true)}
+          >
+            <QrCode className="mr-2 h-4 w-4" /> Scan QR code
+          </Button>
+          {settings.upiId && (
+            <Button type="button" variant="outline" className="flex-1" onClick={copyUpi}>
+              {copied ? (
+                <Check className="mr-2 h-4 w-4 text-emerald-600" />
+              ) : (
+                <Copy className="mr-2 h-4 w-4" />
+              )}
+              Copy UPI ID
+            </Button>
+          )}
+        </div>
+        {settings.upiId && (
+          <code className="block truncate rounded-md border border-border/60 bg-muted/40 px-3 py-2 text-center text-sm">
+            {settings.upiId}
+          </code>
+        )}
+
+        <div className="rounded-lg bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
+          <p className="font-medium text-foreground">How to pay</p>
+          <p>
+            1.{" "}
+            {upiLink
+              ? "On your phone, tap a pay button above — or use Scan QR code / Copy UPI ID"
+              : "Scan the QR or copy the UPI ID into any UPI app"}{" "}
+            (GPay, PhonePe, Paytm…).
+          </p>
+          <p>2. Pay exactly ₹{amount} — please don&apos;t change the amount.</p>
+          <p>3. Screenshot the success page and upload it below.</p>
         </div>
       </div>
 
@@ -285,6 +380,30 @@ export function PaymentScreen({
           booking.
         </p>
       </div>
+
+      {/* QR opens in a closeable overlay (built-in X / Esc / tap-outside). */}
+      <Dialog open={qrOpen} onOpenChange={setQrOpen}>
+        <DialogContent className="sm:max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="text-center text-base">
+              Scan to pay {settings.payeeName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="rounded-xl border border-border/60 bg-white p-4">
+            <Image
+              src={settings.qrUrl}
+              alt="UPI QR code"
+              width={320}
+              height={320}
+              className="mx-auto h-64 w-64 object-contain"
+              unoptimized
+            />
+          </div>
+          <p className="text-center text-xs text-muted-foreground">
+            Pay ₹{amount}, then close this and upload your screenshot below.
+          </p>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

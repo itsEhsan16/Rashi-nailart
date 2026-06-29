@@ -33,7 +33,8 @@ export function TaskCard({
       className={cn(
         "relative overflow-hidden p-3.5 pl-4 shadow-soft transition-shadow hover:shadow-elegant",
         isNow && "ring-1 ring-primary/40",
-        isDone && "bg-emerald-500/5 opacity-90",
+        // Done tasks are de-emphasised — lightly blurred + dimmed — and locked from edits.
+        isDone && "bg-emerald-500/5 opacity-60 blur-[1.5px]",
       )}
     >
       <span
@@ -79,21 +80,20 @@ export function TaskCard({
         </span>
       </div>
 
-      {row.payment_status === "verified" && (
+      {/* Actions disappear once the task is done — a completed booking is locked. */}
+      {row.payment_status === "verified" && !row.completed && (
         <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-2.5">
           <Button size="sm" variant="outline" onClick={() => onOpenExtras(row)}>
             <Receipt className="mr-1 h-4 w-4" /> Extras
           </Button>
-          {!row.completed && (
-            <Button size="sm" disabled={busy} onClick={() => onComplete(row.id)}>
-              {busy ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <CheckCircle2 className="mr-1 h-4 w-4" />
-              )}
-              Done
-            </Button>
-          )}
+          <Button size="sm" disabled={busy} onClick={() => onComplete(row.id)}>
+            {busy ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="mr-1 h-4 w-4" />
+            )}
+            Done
+          </Button>
         </div>
       )}
     </Card>

@@ -368,6 +368,10 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
               We&apos;ve received your screenshot and will verify your ₹{bookingFee} payment. Nothing
               more to pay online — just arrive at your slot. Pay the balance at the studio.
             </p>
+            <p className="mt-2">
+              Rescheduling isn&apos;t possible. If you miss this appointment, the ₹{bookingFee}{" "}
+              fee won&apos;t be refunded and you&apos;ll need to book again.
+            </p>
           </div>
           <Button className="mt-6" variant="outline" onClick={clearConfirmed}>
             Book another appointment

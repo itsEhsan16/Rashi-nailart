@@ -192,7 +192,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   function RowActions({ r }: { r: BookingRow }) {
     return (
       <div className="flex flex-wrap items-center justify-end gap-1">
-        {r.payment_status === "verified" && (
+        {r.payment_status === "verified" && !r.completed && (
           <Button size="sm" variant="outline" onClick={() => setExtrasFor(r)}>
             <Receipt className="mr-1 h-4 w-4" /> Extras
           </Button>
@@ -365,7 +365,9 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                     r.is_member && "bg-primary/5",
                     r.payment_status === "pending_payment" && "opacity-60",
                     (r.payment_status === "rejected" || r.payment_status === "cancelled") && "opacity-50",
-                    r.completed && "bg-emerald-500/5",
+                    // Done bookings are blurred + dimmed; the actions cell (last) stays crisp.
+                    r.completed &&
+                      "bg-emerald-500/5 [&>td:not(:last-child)]:opacity-60 [&>td:not(:last-child)]:blur-[1.5px]",
                   )}
                 >
                   <TableCell className="font-medium">
@@ -424,7 +426,9 @@ export function BookingsPanel({ role }: { role: UserRole }) {
             className={cn(
               "p-4 shadow-soft",
               r.is_member && "border-primary/30 bg-primary/5",
-              r.completed && "bg-emerald-500/5",
+              // Done bookings are blurred + dimmed; the footer actions (last child) stay crisp.
+              r.completed &&
+                "bg-emerald-500/5 [&>*:not(:last-child)]:opacity-60 [&>*:not(:last-child)]:blur-[1.5px]",
               (r.payment_status === "rejected" || r.payment_status === "cancelled") && "opacity-60",
             )}
           >
