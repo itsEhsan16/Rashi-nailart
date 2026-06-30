@@ -46,6 +46,9 @@ import {
   type TeamRow,
   type StaffRow,
 } from "@/lib/actions/admin";
+import { StaffAvatar } from "@/components/staff-avatar";
+import { staffPhotoUrl } from "@/lib/staff-photos";
+import { StaffDetail } from "./staff-detail";
 
 type BranchName = (typeof BRANCHES)[number];
 
@@ -53,6 +56,7 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
   const isAdmin = role === "admin";
   const [rows, setRows] = useState<TeamRow[]>([]);
   const [stylists, setStylists] = useState<StaffRow[]>([]);
+  const [selected, setSelected] = useState<StaffRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -152,8 +156,63 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
       </div>
     ) : null;
 
+  if (selected) {
+    return (
+      <StaffDetail
+        staff={selected}
+        canEdit
+        onBack={() => setSelected(null)}
+        onPhotoChanged={load}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
+      <section className="space-y-3">
+        <SectionHeader
+          title="Employees"
+          description={
+            loading
+              ? "Loading…"
+              : `${stylists.length} ${stylists.length === 1 ? "stylist" : "stylists"} · tap to open`
+          }
+        />
+        {stylists.length === 0 && !loading ? (
+          <Card className="rounded-xl shadow-soft">
+            <EmptyState
+              icon={<Users className="h-6 w-6" />}
+              title="No stylists yet"
+              description="Add stylists under Manage → Artists, then open them here."
+            />
+          </Card>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {stylists.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSelected(s)}
+                className="flex items-center gap-3 rounded-xl border border-border/60 bg-card p-3 text-left shadow-soft transition-colors hover:border-border hover:bg-muted/40"
+              >
+                <StaffAvatar
+                  name={s.name}
+                  photoUrl={s.photo_url ?? staffPhotoUrl(s.name)}
+                  className="h-12 w-12"
+                />
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{s.name}</div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {s.branch}
+                    {s.store_number ? ` · Studio ${s.store_number}` : ""}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
       <SectionHeader
         title="Team logins"
         description={loading ? "Loading…" : `${rows.length} login${rows.length === 1 ? "" : "s"}`}

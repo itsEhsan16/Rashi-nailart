@@ -21,7 +21,7 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Card } from "@/components/ui/card";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { StaffAvatar } from "@/components/staff-avatar";
 import { cn, slotStartLabel } from "@/lib/utils";
 
 import { bookingFormSchema, type BookingFormValues } from "@/lib/validations/booking";
@@ -37,30 +37,6 @@ import { PaymentScreen } from "@/components/booking/payment-screen";
 import { BookingSteps } from "@/components/booking/booking-steps";
 import type { ServiceOption, BranchOption, StaffOption } from "@/lib/catalog";
 import { PENDING_HOLD_MINUTES } from "@/lib/salon-data";
-
-/** Small avatar for the artist dropdown: the stylist's photo, else their initials. */
-function StaffAvatar({
-  name,
-  photoUrl,
-  className,
-}: {
-  name: string;
-  photoUrl: string | null;
-  className?: string;
-}) {
-  const initials = name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return (
-    <Avatar className={cn("h-13.5 w-13.5 rounded-md", className)}>
-      {photoUrl && <AvatarImage src={photoUrl} alt={name} className="object-cover" />}
-      <AvatarFallback className="rounded-md text-xs">{initials}</AvatarFallback>
-    </Avatar>
-  );
-}
 
 type Props = {
   services: ServiceOption[];
@@ -582,7 +558,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                     <SelectItem
                       key={s.name}
                       value={s.name}
-                      icon={<StaffAvatar name={s.name} photoUrl={s.photoUrl} className="mr-2" />}
+                      icon={<StaffAvatar name={s.name} photoUrl={s.photoUrl} className="mr-2 h-13.5 w-13.5" />}
                     >
                       {s.name}
                       {s.storeNumber && (

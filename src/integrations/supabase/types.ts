@@ -414,6 +414,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          photo_url: string | null
           store_number: string | null
         }
         Insert: {
@@ -421,6 +422,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          photo_url?: string | null
           store_number?: string | null
         }
         Update: {
@@ -428,6 +430,7 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          photo_url?: string | null
           store_number?: string | null
         }
         Relationships: []

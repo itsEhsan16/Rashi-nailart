@@ -36,3 +36,16 @@ export function staffPhotoUrl(name: string): string | null {
   const path = STAFF_PHOTO_BY_KEY[name.trim().toLowerCase()];
   return path ? encodeURI(path) : null;
 }
+
+/**
+ * True when a PostgREST error is the `staff.photo_url` column being absent — i.e.
+ * the additive migration 20260630140000_staff_photo_url.sql hasn't been applied
+ * yet. Staff reads catch this and retry without the column so the app (notably the
+ * customer booking dropdown) keeps working until the migration lands.
+ */
+export function isMissingStaffPhotoColumn(
+  error: { code?: string; message?: string } | null | undefined,
+): boolean {
+  if (!error) return false;
+  return error.code === "42703" || /photo_url/i.test(error.message ?? "");
+}
