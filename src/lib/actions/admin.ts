@@ -20,6 +20,7 @@ import { fulfillMembershipPayment, type MembershipPayment } from "@/lib/payments
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { notifyCustomer } from "@/lib/notify";
 import { UPI_VPA_RE } from "@/lib/upi";
+import { isMissingStaffPhotoColumn } from "@/lib/staff-photos";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -613,6 +614,63 @@ export async function uploadQrImage(formData: FormData) {
   return { ok: true as const, url };
 }
 
+const STAFF_PHOTO_DIR = "staff-photos";
+
+/**
+ * Upload a stylist's profile photo to the public app-assets bucket and persist
+ * its URL on the staff row. Authorized for admin (any) and manager (own branch
+ * via staffInScope). Reuses the same image pipeline as the QR upload. Returns the
+ * new URL so the employee page can update its preview immediately.
+ */
+export async function uploadStaffPhoto(formData: FormData) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, url: null };
+
+  const staffId = formData.get("staffId");
+  if (typeof staffId !== "string" || !z.string().uuid().safeParse(staffId).success) {
+    return { ok: false as const, error: "Invalid artist.", url: null };
+  }
+
+  const value = formData.get("file");
+  if (!value || typeof value === "string") {
+    return { ok: false as const, error: "Please choose an image to upload.", url: null };
+  }
+  const file = value;
+  if (file.size === 0) return { ok: false as const, error: "The selected file is empty.", url: null };
+  if (file.size > MAX_PROOF_BYTES) {
+    return { ok: false as const, error: "Image is too large (max 10 MB).", url: null };
+  }
+  if (!isAcceptedProofFile(file)) {
+    return { ok: false as const, error: "Only JPG, PNG, WebP or HEIC images are allowed.", url: null };
+  }
+
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, staffId))) return { ...UNAUTHORIZED, url: null };
+
+  // HEIC photos are transcoded to JPEG so they render everywhere.
+  const prepared = await prepareImageForStorage(file);
+  if (!prepared.ok) return { ok: false as const, error: prepared.error, url: null };
+
+  const dir = `${STAFF_PHOTO_DIR}/${staffId}`;
+  const path = `${dir}/photo.${prepared.image.ext}`;
+  const { error: upErr } = await admin.storage.from(QR_BUCKET).upload(path, prepared.image.buffer, {
+    contentType: prepared.image.contentType,
+    upsert: true,
+  });
+  if (upErr) return { ok: false as const, error: describeStorageError(upErr.message), url: null };
+
+  // Drop a superseded photo (e.g. photo.png replaced by a HEIC -> photo.jpg).
+  await pruneSiblings(admin, QR_BUCKET, dir, `photo.${prepared.image.ext}`);
+
+  const { data: pub } = admin.storage.from(QR_BUCKET).getPublicUrl(path);
+  const url = `${pub.publicUrl}?v=${Date.now()}`;
+
+  const { error: saveErr } = await admin.from("staff").update({ photo_url: url }).eq("id", staffId);
+  if (saveErr) return { ok: false as const, error: saveErr.message, url: null };
+
+  return { ok: true as const, url };
+}
+
 // ─────────────────────────────── Overview ───────────────────────────────────
 
 /** Per-artist completed-work rollup (mirrors staff-metrics earnedAmount). */
@@ -1091,17 +1149,38 @@ export async function saveBranch(input: z.infer<typeof branchInput>) {
 }
 
 // ─────────────────────────────── Staff ──────────────────────────────────────
-export type StaffRow = { id: string; name: string; branch: string; store_number: string | null };
+export type StaffRow = {
+  id: string;
+  name: string;
+  branch: string;
+  store_number: string | null;
+  photo_url: string | null;
+};
 
 export async function listStaffManage() {
   const profile = await requireRole(["admin", "manager"]);
   if (!profile) return { ...UNAUTHORIZED, staff: [] as StaffRow[] };
   const admin = createAdminClient();
-  let q = admin.from("staff").select("id, name, branch, store_number").order("branch").order("name");
-  if (profile.role === "manager" && profile.branch) q = q.eq("branch", profile.branch);
-  const { data, error } = await q;
+  const branch = profile.role === "manager" && profile.branch ? profile.branch : null;
+
+  // photo_url is additive; retry without it if the migration hasn't been applied.
+  const run = (cols: string) => {
+    let q = admin.from("staff").select(cols).order("branch").order("name");
+    if (branch) q = q.eq("branch", branch);
+    return q;
+  };
+  let { data, error } = await run("id, name, branch, store_number, photo_url");
+  if (isMissingStaffPhotoColumn(error)) ({ data, error } = await run("id, name, branch, store_number"));
   if (error) return { ok: false as const, error: error.message, staff: [] as StaffRow[] };
-  return { ok: true as const, staff: (data as StaffRow[] | null) ?? [] };
+
+  const staff: StaffRow[] = ((data as Record<string, unknown>[] | null) ?? []).map((s) => ({
+    id: String(s.id),
+    name: String(s.name),
+    branch: String(s.branch),
+    store_number: (s.store_number as string | null) ?? null,
+    photo_url: (s.photo_url as string | null | undefined) ?? null,
+  }));
+  return { ok: true as const, staff };
 }
 
 const addStaffInput = z.object({
@@ -1159,6 +1238,98 @@ export async function removeStaff(input: { id: string }) {
   const { error } = await admin.from("staff").delete().eq("id", parsed.data.id);
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
+}
+
+export type StaffLogin = { email: string; full_name: string | null; role: string };
+export type StaffDetailData = {
+  staff: {
+    id: string;
+    name: string;
+    branch: string;
+    store_number: string | null;
+    photo_url: string | null;
+    created_at: string;
+  };
+  bookings: BookingRow[];
+  schedule: ScheduleEntry[];
+  login: StaffLogin | null;
+};
+
+/**
+ * Everything the admin/manager employee page needs for one stylist: their roster
+ * row, their full booking history (for earnings/commission, computed client-side),
+ * weekly schedule, and linked login if any. Authorized via staffInScope.
+ */
+export async function getStaffDetail(input: { staffId: string }) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, detail: null };
+  const parsed = z.object({ staffId: z.string().uuid() }).safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid id", detail: null };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.staffId)))
+    return { ...UNAUTHORIZED, detail: null };
+
+  // photo_url is additive; retry without it if the migration hasn't been applied.
+  const runStaff = (cols: string) =>
+    admin.from("staff").select(cols).eq("id", parsed.data.staffId).maybeSingle();
+  let { data: staffData, error: staffErr } = await runStaff(
+    "id, name, branch, store_number, photo_url, created_at",
+  );
+  if (isMissingStaffPhotoColumn(staffErr))
+    ({ data: staffData, error: staffErr } = await runStaff(
+      "id, name, branch, store_number, created_at",
+    ));
+  if (staffErr) return { ok: false as const, error: staffErr.message, detail: null };
+  const row = staffData as Record<string, unknown> | null;
+  if (!row) return { ok: false as const, error: "Artist not found", detail: null };
+  const staff: StaffDetailData["staff"] = {
+    id: String(row.id),
+    name: String(row.name),
+    branch: String(row.branch),
+    store_number: (row.store_number as string | null) ?? null,
+    photo_url: (row.photo_url as string | null | undefined) ?? null,
+    created_at: String(row.created_at),
+  };
+
+  // Exact (case-insensitive) name match within the branch — `ilike` with no
+  // wildcards never pulls in another stylist whose name is a superstring.
+  const { data: bData, error: bErr } = await admin
+    .from("appointments")
+    .select(BOOKING_COLUMNS)
+    .ilike("staff_name", staff.name)
+    .eq("branch", staff.branch as (typeof BRANCHES_TUPLE)[number])
+    .neq("payment_status", "pending_payment")
+    .order("appointment_date", { ascending: false })
+    .order("time_slot", { ascending: true });
+  if (bErr) return { ok: false as const, error: bErr.message, detail: null };
+  let bookings = ((bData as Omit<BookingRow, "extras_total">[] | null) ?? []).map((b) => ({
+    ...b,
+    extras_total: 0,
+  })) as BookingRow[];
+  if (bookings.length) {
+    const totals = await extrasTotalsFor(admin, bookings.map((b) => b.id));
+    bookings = bookings.map((b) => ({ ...b, extras_total: totals.get(b.id) ?? 0 }));
+  }
+
+  const { data: schedData } = await admin
+    .from("staff_schedules")
+    .select("day_of_week, time_slot")
+    .eq("staff_id", staff.id);
+  const schedule = (schedData as ScheduleEntry[] | null) ?? [];
+
+  // Linked login (if any), matched on the roster name + branch.
+  const { data: profData } = await admin
+    .from("profiles")
+    .select("email, full_name, role")
+    .ilike("staff_name", staff.name)
+    .eq("branch", staff.branch as (typeof BRANCHES_TUPLE)[number])
+    .limit(1);
+  const prof = ((profData as { email: string | null; full_name: string | null; role: string }[] | null) ?? [])[0];
+  const login: StaffLogin | null = prof
+    ? { email: prof.email ?? "", full_name: prof.full_name, role: prof.role }
+    : null;
+
+  return { ok: true as const, detail: { staff, bookings, schedule, login } as StaffDetailData };
 }
 
 // ─────────────────────────── Staff schedules (weekly) ───────────────────────

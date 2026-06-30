@@ -1,7 +1,20 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { SERVICES, TIME_SLOTS, BRANCHES } from "@/lib/salon-data";
-import { staffPhotoUrl } from "@/lib/staff-photos";
+import { staffPhotoUrl, isMissingStaffPhotoColumn } from "@/lib/staff-photos";
+
+/** Staff for the catalog, tolerating photo_url not existing yet (additive migration). */
+async function fetchStaffRows(supabase: Awaited<ReturnType<typeof createClient>>) {
+  const withPhoto: string =
+    "name, branch, store_number, photo_url, staff_schedules(day_of_week, time_slot)";
+  const withoutPhoto: string =
+    "name, branch, store_number, staff_schedules(day_of_week, time_slot)";
+  const res = await supabase.from("staff").select(withPhoto).order("name");
+  if (isMissingStaffPhotoColumn(res.error)) {
+    return await supabase.from("staff").select(withoutPhoto).order("name");
+  }
+  return res;
+}
 
 export type ServiceOption = { name: string; price: number; isNailArt: boolean };
 export type BranchOption = { name: string; address: string | null };
@@ -52,10 +65,7 @@ export async function getCatalog(): Promise<Catalog> {
         .select("name, address")
         .eq("active", true)
         .order("sort_order"),
-      supabase
-        .from("staff")
-        .select("name, branch, store_number, staff_schedules(day_of_week, time_slot)")
-        .order("name"),
+      fetchStaffRows(supabase),
     ]);
 
     const svcRows =
@@ -68,6 +78,7 @@ export async function getCatalog(): Promise<Catalog> {
             name: string;
             branch: string;
             store_number: string | null;
+            photo_url: string | null;
             staff_schedules: { day_of_week: number; time_slot: string }[] | null;
           }[]
         | null) ?? [];
@@ -89,7 +100,7 @@ export async function getCatalog(): Promise<Catalog> {
           name: s.name,
           branch: s.branch,
           storeNumber: s.store_number,
-          photoUrl: staffPhotoUrl(s.name),
+          photoUrl: s.photo_url ?? staffPhotoUrl(s.name),
           schedule,
         };
       }),
