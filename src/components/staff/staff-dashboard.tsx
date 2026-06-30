@@ -9,11 +9,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/dashboard/page-header";
 import { ExtrasDialog } from "@/components/dashboard/extras-dialog";
+import { formatLocalDate } from "@/lib/utils";
 import { listBookings, completeBooking, type BookingRow } from "@/lib/actions/admin";
 import { computeStaffStats } from "./staff-metrics";
 import { StaffStatsRow } from "./staff-stats";
 import { StaffTaskList } from "./staff-task-list";
 import { StaffCompletedList } from "./staff-completed-list";
+import { StaffMonthlyView } from "./staff-monthly-view";
 
 export function StaffDashboard({ greetingName }: { greetingName: string }) {
   const [rows, setRows] = useState<BookingRow[]>([]);
@@ -47,6 +49,7 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
   }, []);
 
   const stats = useMemo(() => computeStaffStats(rows, now), [rows, now]);
+  const currentMonth = useMemo(() => formatLocalDate(new Date(now)).slice(0, 7), [now]);
   // The task list is for actionable work — drop dead bookings the artist can't act on.
   const taskRows = useMemo(
     () => rows.filter((r) => r.payment_status !== "rejected" && r.payment_status !== "cancelled"),
@@ -107,6 +110,7 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
               <TabsTrigger value="completed">
                 Completed{completedRows.length > 0 ? ` (${completedRows.length})` : ""}
               </TabsTrigger>
+              <TabsTrigger value="monthly">Monthly</TabsTrigger>
             </TabsList>
             <TabsContent value="tasks">
               <StaffTaskList
@@ -119,6 +123,9 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
             </TabsContent>
             <TabsContent value="completed">
               <StaffCompletedList rows={completedRows} now={now} onOpenExtras={setExtrasFor} />
+            </TabsContent>
+            <TabsContent value="monthly">
+              <StaffMonthlyView rows={rows} currentMonth={currentMonth} />
             </TabsContent>
           </Tabs>
         </>

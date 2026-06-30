@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { SERVICES, TIME_SLOTS, BRANCHES } from "@/lib/salon-data";
+import { staffPhotoUrl } from "@/lib/staff-photos";
 
 export type ServiceOption = { name: string; price: number; isNailArt: boolean };
 export type BranchOption = { name: string; address: string | null };
@@ -9,6 +10,8 @@ export type StaffOption = {
   name: string;
   branch: string;
   storeNumber: string | null;
+  /** Public path to the stylist's bundled photo, or null (→ initials fallback). */
+  photoUrl: string | null;
   schedule: Record<number, string[]>;
 };
 
@@ -82,7 +85,13 @@ export async function getCatalog(): Promise<Catalog> {
       staff: staffRows.map((s) => {
         const schedule: Record<number, string[]> = {};
         for (const r of s.staff_schedules ?? []) (schedule[r.day_of_week] ??= []).push(r.time_slot);
-        return { name: s.name, branch: s.branch, storeNumber: s.store_number, schedule };
+        return {
+          name: s.name,
+          branch: s.branch,
+          storeNumber: s.store_number,
+          photoUrl: staffPhotoUrl(s.name),
+          schedule,
+        };
       }),
     };
   } catch {
