@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { StatusPill } from "@/components/dashboard/status-pill";
 import { cn } from "@/lib/utils";
+import { paymentModeLabel } from "@/lib/salon-data";
 import type { BookingRow } from "@/lib/actions/admin";
 import type { TaskState } from "./staff-metrics";
 
@@ -85,7 +86,7 @@ export function TaskCard({
             ) : (
               <Smartphone className="h-3 w-3" />
             )}
-            {row.payment_mode === "upi" ? "UPI" : "Cash"}
+            {paymentModeLabel(row.payment_mode)}
           </Badge>
         )}
         <span className="ml-auto font-semibold text-foreground">
