@@ -72,3 +72,24 @@ export function isAcceptedProofFile(file: { type: string; name: string }): boole
 /** Abandoned pending_payment holds older than this are reclaimable. The customer
  *  has this long to pay over UPI and upload their screenshot before the slot frees. */
 export const PENDING_HOLD_MINUTES = 5;
+
+/**
+ * How staff/manager/admin record that the in-store balance (service + extras)
+ * was settled. The ₹50 booking fee is always paid online; this is the rest.
+ * 'upi' is a legacy/generic value kept only for rows recorded before the split.
+ */
+export const PAYMENT_MODE_VALUES = ["gpay", "phonepe", "paytm", "cash"] as const;
+export type PaymentMode = (typeof PAYMENT_MODE_VALUES)[number];
+
+export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = {
+  gpay: "GPay",
+  phonepe: "PhonePe",
+  paytm: "Paytm",
+  cash: "Cash",
+};
+
+/** Display label for a stored payment mode, incl. the legacy generic 'upi'. */
+export function paymentModeLabel(mode: string): string {
+  if (mode === "upi") return "UPI";
+  return (PAYMENT_MODE_LABELS as Record<string, string>)[mode] ?? mode;
+}

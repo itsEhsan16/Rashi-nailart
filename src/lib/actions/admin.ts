@@ -10,7 +10,12 @@ import {
   pruneSiblings,
   signedProofUrl,
 } from "@/lib/payment-proofs";
-import { MAX_PROOF_BYTES, isAcceptedProofFile } from "@/lib/salon-data";
+import {
+  MAX_PROOF_BYTES,
+  isAcceptedProofFile,
+  PAYMENT_MODE_VALUES,
+  type PaymentMode,
+} from "@/lib/salon-data";
 import { fulfillMembershipPayment, type MembershipPayment } from "@/lib/payments-core";
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { notifyCustomer } from "@/lib/notify";
@@ -48,8 +53,8 @@ export type BookingRow = {
   discount_applied: number;
   completed: boolean;
   created_at: string;
-  /** How the in-store balance (price + extras) was settled. null = unrecorded. */
-  payment_mode: "upi" | "cash" | null;
+  /** How the in-store balance (price + extras) was settled. "upi" is legacy. null = unrecorded. */
+  payment_mode: PaymentMode | "upi" | null;
   /** Sum of staff-added extra line items (₹). Computed, not an appointments column. */
   extras_total: number;
 };
@@ -163,7 +168,7 @@ export async function completeBooking(input: { id: string }) {
 
 const paymentModeInput = z.object({
   id: z.string().uuid(),
-  mode: z.enum(["upi", "cash"]).nullable(), // null clears a previously-set mode
+  mode: z.enum(PAYMENT_MODE_VALUES).nullable(), // null clears a previously-set mode
 });
 
 /** Record how the customer settled the in-store balance (price + extras). Staff,

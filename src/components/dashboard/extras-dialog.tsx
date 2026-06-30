@@ -23,8 +23,7 @@ import {
   type BookingRow,
   type ExtraRow,
 } from "@/lib/actions/admin";
-
-type PayMode = "upi" | "cash";
+import { PAYMENT_MODE_VALUES, PAYMENT_MODE_LABELS, type PaymentMode } from "@/lib/salon-data";
 
 /**
  * Add/remove in-studio extra line items for a booking. Self-contained: owns its
@@ -45,7 +44,7 @@ export function ExtrasDialog({
   const [label, setLabel] = useState("");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState<PayMode | null>(null);
+  const [mode, setMode] = useState<PaymentMode | "upi" | null>(null);
   const [savingMode, setSavingMode] = useState(false);
   const extrasSum = extras.reduce((s, e) => s + e.amount, 0);
 
@@ -69,7 +68,7 @@ export function ExtrasDialog({
     void load(booking.id);
   }, [booking, load]);
 
-  async function onSetMode(next: PayMode | null) {
+  async function onSetMode(next: PaymentMode | null) {
     if (!booking) return;
     const prev = mode;
     setMode(next); // optimistic
@@ -164,27 +163,33 @@ export function ExtrasDialog({
                 )}
               </span>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">How did the customer pay?</span>
-              <div className="flex items-center gap-2">
-                {savingMode && (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                )}
-                <ToggleGroup
-                  type="single"
-                  size="sm"
-                  variant="outline"
-                  value={mode ?? ""}
-                  onValueChange={(v) => onSetMode(v === "" ? null : (v as PayMode))}
-                >
-                  <ToggleGroupItem value="upi" className="gap-1 px-3" aria-label="Paid by UPI">
-                    <Smartphone className="h-3.5 w-3.5" /> UPI
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="cash" className="gap-1 px-3" aria-label="Paid by cash">
-                    <Banknote className="h-3.5 w-3.5" /> Cash
-                  </ToggleGroupItem>
-                </ToggleGroup>
-              </div>
+            <div className="space-y-1.5">
+              <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                How did the customer pay?
+                {savingMode && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              </span>
+              <ToggleGroup
+                type="single"
+                size="sm"
+                variant="outline"
+                value={mode ?? ""}
+                onValueChange={(v) => onSetMode(v === "" ? null : (v as PaymentMode))}
+                className="flex-wrap justify-start"
+              >
+                {PAYMENT_MODE_VALUES.map((m) => {
+                  const Icon = m === "cash" ? Banknote : Smartphone;
+                  return (
+                    <ToggleGroupItem
+                      key={m}
+                      value={m}
+                      className="gap-1 px-2.5"
+                      aria-label={`Paid by ${PAYMENT_MODE_LABELS[m]}`}
+                    >
+                      <Icon className="h-3.5 w-3.5" /> {PAYMENT_MODE_LABELS[m]}
+                    </ToggleGroupItem>
+                  );
+                })}
+              </ToggleGroup>
             </div>
           </div>
 

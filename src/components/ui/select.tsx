@@ -106,8 +106,10 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
+  // `icon` renders OUTSIDE ItemText: Radix mirrors ItemText into the closed
+  // trigger, where a cloned image flickers — so leading visuals must sit here.
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { icon?: React.ReactNode }
+>(({ className, children, icon, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
@@ -121,6 +123,7 @@ const SelectItem = React.forwardRef<
         <Check className="h-4 w-4" />
       </SelectPrimitive.ItemIndicator>
     </span>
+    {icon}
     <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
   </SelectPrimitive.Item>
 ));

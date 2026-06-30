@@ -47,6 +47,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusPill } from "@/components/dashboard/status-pill";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ExtrasDialog } from "@/components/dashboard/extras-dialog";
@@ -99,7 +100,12 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   const showPhone = role !== "staff";
 
   const [rows, setRows] = useState<BookingRow[]>([]);
-  const sortedRows = useMemo(() => sortBySchedule(rows, Date.now()), [rows]);
+  const [view, setView] = useState<"active" | "completed">("active");
+  // Completed bookings live only in the Completed tab — excluded from every other view.
+  const displayRows = useMemo(() => {
+    const sorted = sortBySchedule(rows, Date.now());
+    return view === "completed" ? sorted : sorted.filter((r) => !r.completed);
+  }, [rows, view]);
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState<Date | undefined>();
   const [branch, setBranch] = useState<string>("");
@@ -118,7 +124,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
       date: date ? format(date, "yyyy-MM-dd") : undefined,
       branch: showBranchFilter && branch ? (branch as (typeof BRANCHES)[number]) : undefined,
       staff: staff || undefined,
-      status: status === "all" ? undefined : status,
+      status: view === "completed" ? "completed" : status === "all" ? undefined : status,
     });
     setLoading(false);
     if (!res.ok) {
@@ -126,7 +132,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
       return;
     }
     setRows(res.bookings);
-  }, [date, branch, staff, status, showBranchFilter]);
+  }, [date, branch, staff, status, showBranchFilter, view]);
 
   useEffect(() => {
     void load();
@@ -168,8 +174,8 @@ export function BookingsPanel({ role }: { role: UserRole }) {
 
   function exportCsv() {
     downloadCsv(
-      `bookings-${new Date().toISOString().slice(0, 10)}.csv`,
-      sortedRows.map((r) => ({
+      `${view === "completed" ? "completed" : "bookings"}-${new Date().toISOString().slice(0, 10)}.csv`,
+      displayRows.map((r) => ({
         client: r.client_name,
         phone: r.phone,
         branch: r.branch,
@@ -244,6 +250,13 @@ export function BookingsPanel({ role }: { role: UserRole }) {
 
   return (
     <div className="space-y-6">
+      <Tabs value={view} onValueChange={(v) => setView(v as "active" | "completed")}>
+        <TabsList>
+          <TabsTrigger value="active">Bookings</TabsTrigger>
+          <TabsTrigger value="completed">Completed</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
       {canFilter && (
         <Card className="p-4 shadow-soft">
           <div className="flex flex-wrap items-end gap-3">
@@ -282,23 +295,24 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                 </Select>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label className="text-xs">Status</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
-                <SelectTrigger className="w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
-                  <SelectItem value="payment_uploaded">Awaiting verification</SelectItem>
-                  <SelectItem value="verified">Confirmed</SelectItem>
-                  <SelectItem value="pending_payment">Awaiting payment</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {view === "active" && (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Status</Label>
+                <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
+                  <SelectTrigger className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="payment_uploaded">Awaiting verification</SelectItem>
+                    <SelectItem value="verified">Confirmed</SelectItem>
+                    <SelectItem value="pending_payment">Awaiting payment</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                    <SelectItem value="cancelled">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs">Staff</Label>
               <Input className="w-36" value={staff} onChange={(e) => setStaff(e.target.value)} placeholder="Artist" />
@@ -319,10 +333,17 @@ export function BookingsPanel({ role }: { role: UserRole }) {
             )}
             <div className="ml-auto flex items-center gap-3">
               <span className="text-sm text-muted-foreground">
-                {loading ? "Loading…" : `${rows.length} booking${rows.length === 1 ? "" : "s"}`}
+                {loading
+                  ? "Loading…"
+                  : `${displayRows.length} booking${displayRows.length === 1 ? "" : "s"}`}
               </span>
               {canManage && (
-                <Button variant="outline" size="sm" onClick={exportCsv} disabled={rows.length === 0}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportCsv}
+                  disabled={displayRows.length === 0}
+                >
                   <Download className="mr-1 h-4 w-4" /> CSV
                 </Button>
               )}
@@ -351,23 +372,29 @@ export function BookingsPanel({ role }: { role: UserRole }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.length === 0 && !loading && (
+              {displayRows.length === 0 && !loading && (
                 <TableRow>
                   <TableCell colSpan={colSpan} className="p-0">
-                    <EmptyState icon={<CalendarX2 className="h-6 w-6" />} title="No bookings found" description="Try adjusting your filters." />
+                    <EmptyState
+                      icon={<CalendarX2 className="h-6 w-6" />}
+                      title={view === "completed" ? "No completed bookings yet" : "No bookings found"}
+                      description={
+                        view === "completed"
+                          ? "Bookings marked done will appear here."
+                          : "Try adjusting your filters."
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               )}
-              {sortedRows.map((r) => (
+              {displayRows.map((r) => (
                 <TableRow
                   key={r.id}
                   className={cn(
                     r.is_member && "bg-primary/5",
                     r.payment_status === "pending_payment" && "opacity-60",
                     (r.payment_status === "rejected" || r.payment_status === "cancelled") && "opacity-50",
-                    // Done bookings are blurred + dimmed; the actions cell (last) stays crisp.
-                    r.completed &&
-                      "bg-emerald-500/5 [&>td:not(:last-child)]:opacity-60 [&>td:not(:last-child)]:blur-[1.5px]",
+                    r.completed && "bg-emerald-500/5",
                   )}
                 >
                   <TableCell className="font-medium">
@@ -415,20 +442,26 @@ export function BookingsPanel({ role }: { role: UserRole }) {
 
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
-        {rows.length === 0 && !loading && (
+        {displayRows.length === 0 && !loading && (
           <Card className="shadow-soft">
-            <EmptyState icon={<CalendarX2 className="h-6 w-6" />} title="No bookings found" description="Try adjusting your filters." />
+            <EmptyState
+              icon={<CalendarX2 className="h-6 w-6" />}
+              title={view === "completed" ? "No completed bookings yet" : "No bookings found"}
+              description={
+                view === "completed"
+                  ? "Bookings marked done will appear here."
+                  : "Try adjusting your filters."
+              }
+            />
           </Card>
         )}
-        {sortedRows.map((r) => (
+        {displayRows.map((r) => (
           <Card
             key={r.id}
             className={cn(
               "p-4 shadow-soft",
               r.is_member && "border-primary/30 bg-primary/5",
-              // Done bookings are blurred + dimmed; the footer actions (last child) stay crisp.
-              r.completed &&
-                "bg-emerald-500/5 [&>*:not(:last-child)]:opacity-60 [&>*:not(:last-child)]:blur-[1.5px]",
+              r.completed && "bg-emerald-500/5",
               (r.payment_status === "rejected" || r.payment_status === "cancelled") && "opacity-60",
             )}
           >
