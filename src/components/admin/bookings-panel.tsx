@@ -51,6 +51,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusPill } from "@/components/dashboard/status-pill";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ExtrasDialog } from "@/components/dashboard/extras-dialog";
+import { TableSkeleton } from "@/components/dashboard/skeletons";
 import { cn } from "@/lib/utils";
 import { sortBySchedule } from "@/lib/booking-sort";
 import { downloadCsv } from "@/lib/export-csv";
@@ -246,7 +247,8 @@ export function BookingsPanel({ role }: { role: UserRole }) {
     );
   }
 
-  const colSpan = showPhone ? 11 : 10;
+  // Client+phone, date+time and branch+staff are now paired into single cells.
+  const colSpan = 8;
 
   return (
     <div className="space-y-6">
@@ -353,18 +355,19 @@ export function BookingsPanel({ role }: { role: UserRole }) {
       )}
 
       {/* Desktop table */}
+      {loading ? (
+        <TableSkeleton columns={colSpan} />
+      ) : (
+      <>
       <Card className="hidden shadow-soft md:block">
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="sticky top-0 z-10 border-b border-border bg-muted/40 backdrop-blur hover:bg-muted/40 [&_th]:text-xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-wide">
-                <TableHead>Client</TableHead>
-                {showPhone && <TableHead>Phone</TableHead>}
-                <TableHead>Branch</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Time</TableHead>
+                <TableHead>Client details</TableHead>
+                <TableHead>Schedule</TableHead>
+                <TableHead>Branch &amp; staff</TableHead>
                 <TableHead>Service</TableHead>
-                <TableHead>Staff</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Proof</TableHead>
                 <TableHead>Notes</TableHead>
@@ -406,17 +409,21 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                         </Badge>
                       )}
                     </div>
+                    {showPhone && r.phone && (
+                      <div className="text-xs text-muted-foreground">{r.phone}</div>
+                    )}
                   </TableCell>
-                  {showPhone && <TableCell>{r.phone}</TableCell>}
+                  <TableCell className="whitespace-nowrap">
+                    <div>{format(new Date(r.appointment_date), "dd MMM yyyy")}</div>
+                    <div className="text-xs text-muted-foreground">{r.time_slot}</div>
+                  </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{r.branch}</Badge>
+                    <div className="mt-1 text-xs text-muted-foreground">{r.staff_name}</div>
                   </TableCell>
-                  <TableCell>{format(new Date(r.appointment_date), "dd MMM yyyy")}</TableCell>
-                  <TableCell className="whitespace-nowrap">{r.time_slot}</TableCell>
                   <TableCell>
                     <ServiceSummary r={r} />
                   </TableCell>
-                  <TableCell>{r.staff_name}</TableCell>
                   <TableCell>
                     <StatusPill row={r} />
                   </TableCell>
@@ -512,6 +519,8 @@ export function BookingsPanel({ role }: { role: UserRole }) {
           </Card>
         ))}
       </div>
+      </>
+      )}
 
       <Dialog open={!!proofFor} onOpenChange={(o) => !o && setProofFor(null)}>
         <DialogContent className="sm:max-w-md">

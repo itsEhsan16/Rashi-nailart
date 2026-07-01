@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SectionHeader } from "@/components/dashboard/page-header";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { TableSkeleton } from "@/components/dashboard/skeletons";
 import {
   Dialog,
   DialogContent,
@@ -154,6 +155,8 @@ export function PaymentsPanel() {
           </Button>
         }
       />
+
+      {loading && rows.length === 0 && <TableSkeleton columns={7} />}
 
       {rows.length === 0 && !loading && (
         <Card className="shadow-soft">

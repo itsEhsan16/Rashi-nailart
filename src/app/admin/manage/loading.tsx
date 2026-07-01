@@ -1,0 +1,5 @@
+import { ManagePageSkeleton } from "@/components/dashboard/skeletons";
+
+export default function Loading() {
+  return <ManagePageSkeleton />;
+}

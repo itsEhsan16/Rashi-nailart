@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { NavigationProgress } from "@/components/navigation-progress";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
@@ -55,6 +56,7 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <NavigationProgress />
         {children}
         <Toaster richColors position="top-center" />
       </body>
