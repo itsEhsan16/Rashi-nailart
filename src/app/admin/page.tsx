@@ -1,16 +1,6 @@
-import { LayoutDashboard } from "lucide-react";
-import { DashboardTabs } from "@/components/admin/dashboard-tabs";
-import { PageHeader } from "@/components/dashboard/page-header";
+import { redirect } from "next/navigation";
 
+/** /admin lands on the Overview tab, the default admin view. */
 export default function AdminPage() {
-  return (
-    <div>
-      <PageHeader
-        title="Jagruti Mehta — Dashboard"
-        subtitle="Owner overview · everything across your studios"
-        icon={<LayoutDashboard className="h-5 w-5" />}
-      />
-      <DashboardTabs role="admin" branch={null} />
-    </div>
-  );
+  redirect("/admin/overview");
 }
