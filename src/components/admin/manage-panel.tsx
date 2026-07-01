@@ -36,6 +36,7 @@ import {
 } from "@/lib/actions/admin";
 import { StaffManager } from "@/components/admin/staff-manager";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { ListSkeleton } from "@/components/dashboard/skeletons";
 import { composeSlotLabel, minutesOfDay, slotStartLabel } from "@/lib/utils";
 
 // ───────────────────────────── Services ─────────────────────────────────────
@@ -163,7 +164,7 @@ function ServicesManager() {
       />
 
       <div className="mt-4 space-y-2">
-        {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {loading && <ListSkeleton />}
         {!loading && rows.length === 0 && (
           <EmptyState
             icon={<Scissors className="h-6 w-6" />}
@@ -278,7 +279,7 @@ function SlotsManager() {
           : "Pick a start and end time. Customers see only the start time; artists choose from these slots in their weekly schedule."}
       </p>
       <div className="mt-4 space-y-2">
-        {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {loading && <ListSkeleton />}
         {!loading && rows.length === 0 && (
           <EmptyState
             icon={<Clock className="h-6 w-6" />}
@@ -348,7 +349,7 @@ function BranchesManager() {
         description="Update the contact details customers see for each location."
       />
       <div className="mt-4 space-y-4">
-        {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {loading && <ListSkeleton />}
         {!loading && rows.length === 0 && (
           <EmptyState
             icon={<MapPin className="h-6 w-6" />}

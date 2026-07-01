@@ -11,6 +11,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SectionHeader } from "@/components/dashboard/page-header";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { TeamPageSkeleton } from "@/components/dashboard/skeletons";
 import { Users } from "lucide-react";
 import {
   Select,
@@ -165,6 +166,12 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
         onPhotoChanged={load}
       />
     );
+  }
+
+  // First load: show a skeleton in the shape of the team page. Refetches after
+  // a mutation keep the existing data on screen instead of flashing back to this.
+  if (loading && rows.length === 0 && stylists.length === 0) {
+    return <TeamPageSkeleton />;
   }
 
   return (
