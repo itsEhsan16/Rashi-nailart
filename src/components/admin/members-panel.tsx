@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SectionHeader } from "@/components/dashboard/page-header";
 import { EmptyState } from "@/components/dashboard/empty-state";
+import { TableSkeleton } from "@/components/dashboard/skeletons";
 import { Crown } from "lucide-react";
 import {
   Dialog,
@@ -164,6 +165,8 @@ export function MembersPanel() {
           </Button>
         }
       />
+
+      {loading && rows.length === 0 && <TableSkeleton columns={7} />}
 
       {rows.length === 0 && !loading && (
         <Card className="shadow-soft">
