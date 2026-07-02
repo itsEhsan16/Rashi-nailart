@@ -21,12 +21,15 @@ export const MEMBERSHIP_PRICE = 100; // ₹100 / year
 export const BOOKING_FEE = 50; // ₹50 booking fee paid before confirmation
 
 /**
- * Manual-UPI booking lifecycle:
- *   pending_payment  → slot held, awaiting the customer's screenshot upload
- *   payment_uploaded → proof received, awaiting admin verification (slot held)
- *   verified         → admin confirmed payment, booking finalized
- *   rejected         → admin rejected the proof, slot released
+ * Cashfree booking lifecycle:
+ *   pending_payment  → slot held, awaiting the customer's online payment
+ *   verified         → payment confirmed (webhook / return-page reconcile),
+ *                      booking finalized automatically — no admin action
  *   cancelled        → admin cancelled a confirmed booking (slot released)
+ *   rejected         → payment rejected, slot released (rare)
+ *   payment_uploaded → LEGACY (old manual screenshot-verification flow). No longer
+ *                      written; kept in the vocabulary so historical rows remain
+ *                      valid and render correctly.
  */
 export const BOOKING_STATUSES = [
   "pending_payment",
@@ -44,7 +47,7 @@ export const SLOT_HOLDING_STATUSES: readonly BookingStatus[] = [
   "verified",
 ];
 
-/** Max upload size for a payment screenshot. */
+/** Max upload size for an admin image upload (UPI QR / staff photo). */
 export const MAX_PROOF_BYTES = 10 * 1024 * 1024; // 10 MB
 export const ALLOWED_PROOF_TYPES = [
   "image/jpeg",
@@ -55,8 +58,8 @@ export const ALLOWED_PROOF_TYPES = [
 ] as const;
 
 /**
- * True if an uploaded file is an accepted payment-proof image. Matches by MIME
- * type, but also accepts HEIC/HEIF by file extension because some browsers
+ * True if an uploaded file is an accepted image (admin QR / staff photo). Matches
+ * by MIME type, but also accepts HEIC/HEIF by file extension because some browsers
  * report no MIME type for those (iPhone photos); they're transcoded to JPEG
  * server-side on upload.
  */

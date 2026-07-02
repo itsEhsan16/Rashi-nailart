@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   LayoutDashboard,
-  CreditCard,
   CalendarDays,
   Crown,
   SlidersHorizontal,
@@ -18,7 +17,6 @@ import { BRANCHES } from "@/lib/salon-data";
 import { OverviewPanel } from "./overview-panel";
 import { ManagerOverviewPanel } from "./manager-overview-panel";
 import { BookingsPanel } from "./bookings-panel";
-import { PaymentsPanel } from "./payments-panel";
 import { SettingsPanel } from "./settings-panel";
 import { MembersPanel } from "./members-panel";
 import { ManagePanel } from "./manage-panel";
@@ -29,7 +27,6 @@ type BranchName = (typeof BRANCHES)[number];
 
 const ADMIN_NAV: NavItem[] = [
   { value: "overview", label: "Overview", icon: LayoutDashboard },
-  { value: "payments", label: "Payments", icon: CreditCard },
   { value: "bookings", label: "Bookings", icon: CalendarDays },
   { value: "members", label: "Members", icon: Crown },
   { value: "manage", label: "Manage", icon: SlidersHorizontal },
@@ -59,9 +56,6 @@ export function DashboardTabs({ role, branch }: { role: UserRole; branch: string
           <>
             <TabsContent value="overview" className="mt-0">
               <OverviewPanel />
-            </TabsContent>
-            <TabsContent value="payments" className="mt-0">
-              <PaymentsPanel />
             </TabsContent>
             <TabsContent value="bookings" className="mt-0">
               <BookingsPanel role="admin" />

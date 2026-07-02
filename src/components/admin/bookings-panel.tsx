@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { format } from "date-fns";
 import {
   CalendarIcon,
@@ -11,8 +10,6 @@ import {
   Ban,
   Download,
   Crown,
-  ImageIcon,
-  Loader2,
   Receipt,
   CalendarX2,
 } from "lucide-react";
@@ -32,13 +29,6 @@ import {
 } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -61,14 +51,12 @@ import {
   completeBooking,
   cancelBooking,
   deleteBooking,
-  getProofUrl,
   type BookingRow,
 } from "@/lib/actions/admin";
 
 type StatusFilter =
   | "all"
   | "pending_payment"
-  | "payment_uploaded"
   | "verified"
   | "rejected"
   | "cancelled"
@@ -112,10 +100,6 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   const [staff, setStaff] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
 
-  const [proofUrl, setProofUrl] = useState<string | null>(null);
-  const [proofFor, setProofFor] = useState<BookingRow | null>(null);
-  const [proofLoading, setProofLoading] = useState(false);
-
   const [extrasFor, setExtrasFor] = useState<BookingRow | null>(null);
 
   const load = useCallback(async () => {
@@ -158,19 +142,6 @@ export function BookingsPanel({ role }: { role: UserRole }) {
     toast.success("Booking deleted");
     void load();
   }
-  async function viewProof(row: BookingRow) {
-    setProofFor(row);
-    setProofUrl(null);
-    setProofLoading(true);
-    const res = await getProofUrl({ kind: "booking", id: row.id });
-    setProofLoading(false);
-    if (!res.ok) {
-      toast.error(res.error ?? "Could not open screenshot");
-      setProofFor(null);
-      return;
-    }
-    setProofUrl(res.url);
-  }
 
   function exportCsv() {
     downloadCsv(
@@ -208,19 +179,17 @@ export function BookingsPanel({ role }: { role: UserRole }) {
             <CheckCircle2 className="mr-1 h-4 w-4" /> Done
           </Button>
         )}
-        {canManage &&
-          !r.completed &&
-          (r.payment_status === "verified" || r.payment_status === "payment_uploaded") && (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              title="Cancel"
-              onClick={() => onCancel(r.id)}
-            >
-              <Ban className="h-4 w-4" />
-            </Button>
-          )}
+        {canManage && !r.completed && r.payment_status === "verified" && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8"
+            title="Cancel"
+            onClick={() => onCancel(r.id)}
+          >
+            <Ban className="h-4 w-4" />
+          </Button>
+        )}
         {canManage && (
           <Button
             size="icon"
@@ -236,17 +205,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
     );
   }
 
-  function ProofButton({ r }: { r: BookingRow }) {
-    return r.upi_screenshot_url ? (
-      <Button size="sm" variant="outline" onClick={() => viewProof(r)}>
-        <ImageIcon className="mr-1 h-4 w-4" /> View
-      </Button>
-    ) : (
-      <span className="text-xs text-muted-foreground">—</span>
-    );
-  }
-
-  const colSpan = showPhone ? 11 : 10;
+  const colSpan = showPhone ? 10 : 9;
 
   return (
     <div className="space-y-6">
@@ -304,7 +263,6 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All statuses</SelectItem>
-                    <SelectItem value="payment_uploaded">Awaiting verification</SelectItem>
                     <SelectItem value="verified">Confirmed</SelectItem>
                     <SelectItem value="pending_payment">Awaiting payment</SelectItem>
                     <SelectItem value="rejected">Rejected</SelectItem>
@@ -366,7 +324,6 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                 <TableHead>Service</TableHead>
                 <TableHead>Staff</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Proof</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
@@ -419,9 +376,6 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                   <TableCell>{r.staff_name}</TableCell>
                   <TableCell>
                     <StatusPill row={r} />
-                  </TableCell>
-                  <TableCell>
-                    <ProofButton r={r} />
                   </TableCell>
                   <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">
                     {r.rejection_reason ? (
@@ -506,42 +460,11 @@ export function BookingsPanel({ role }: { role: UserRole }) {
             )}
 
             <div className="mt-3 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3">
-              <ProofButton r={r} />
               <RowActions r={r} />
             </div>
           </Card>
         ))}
       </div>
-
-      <Dialog open={!!proofFor} onOpenChange={(o) => !o && setProofFor(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Payment proof — {proofFor?.client_name}</DialogTitle>
-            <DialogDescription>
-              ₹{proofFor?.amount}
-              {showPhone && proofFor?.phone ? ` · ${proofFor.phone}` : ""}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid min-h-[200px] place-items-center">
-            {proofLoading ? (
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            ) : proofUrl ? (
-              <a href={proofUrl} target="_blank" rel="noopener noreferrer">
-                <Image
-                  src={proofUrl}
-                  alt="Payment screenshot"
-                  width={400}
-                  height={600}
-                  className="max-h-[60vh] w-auto rounded-md border border-border/60"
-                  unoptimized
-                />
-              </a>
-            ) : (
-              <p className="text-sm text-muted-foreground">No screenshot.</p>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       <ExtrasDialog
         booking={extrasFor}

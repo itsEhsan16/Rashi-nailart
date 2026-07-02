@@ -36,9 +36,3 @@ export const createBookingInputSchema = z.object({
   special_requests: z.string().max(500).optional().nullable(),
 });
 export type CreateBookingInput = z.infer<typeof createBookingInputSchema>;
-
-/** Identifies the record a payment screenshot is being uploaded against. */
-export const uploadProofSchema = z.object({
-  id: z.string().uuid(),
-});
-export type UploadProofInput = z.infer<typeof uploadProofSchema>;
