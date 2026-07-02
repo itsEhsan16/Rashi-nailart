@@ -8,11 +8,18 @@ import {
   SERVICES,
   SLOT_HOLDING_STATUSES,
 } from "@/lib/salon-data";
-import { uploadProof, validateProofFile } from "@/lib/payment-proofs";
+import {
+  createOrder,
+  getOrder,
+  getSuccessfulPayment,
+  orderIdFor,
+  parseOrderId,
+  synthEmail,
+} from "@/lib/cashfree";
+import { notifyCustomer } from "@/lib/notify";
 import {
   BRANCHES_TUPLE,
   createBookingInputSchema,
-  uploadProofSchema,
   type CreateBookingInput,
 } from "@/lib/validations/booking";
 
@@ -20,6 +27,11 @@ type Admin = ReturnType<typeof createAdminClient>;
 
 function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/** Absolute base URL (no trailing slash) for Cashfree return/notify URLs. */
+function siteUrl(): string {
+  return (process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }
 
 /** Active member = active row whose activation_date has passed and not expired. */
@@ -123,13 +135,13 @@ async function resolveService(
 
 /**
  * Reserve the slot immediately as `pending_payment`. The unique index blocks
- * concurrent bookings of the same slot. The booking is only finalized once an
- * admin verifies the uploaded UPI screenshot. Member nail-art bookings get the
- * 50% discount on the service (charged in-store), priced authoritatively.
+ * concurrent bookings of the same slot. The booking is finalized (→ `verified`)
+ * automatically once Cashfree confirms the ₹50 fee (see createBookingOrder +
+ * confirmBookingByOrder + the webhook). Member nail-art bookings get the 50%
+ * discount on the service (charged in-store), priced authoritatively.
  *
- * Returns the appointment id (the customer's capability token for uploading
- * their proof), the booking fee, and the live UPI settings to render the
- * payment screen.
+ * Returns the appointment id (the customer's capability token for starting the
+ * Cashfree payment) and the booking fee.
  */
 export async function createBooking(input: CreateBookingInput) {
   const parsed = createBookingInputSchema.safeParse(input);
@@ -200,7 +212,6 @@ export async function createBooking(input: CreateBookingInput) {
   }
   const appt = apptData as { id: string };
 
-  const settings = await getPaymentSettings();
   return {
     ok: true as const,
     appointmentId: appt.id,
@@ -208,78 +219,186 @@ export async function createBooking(input: CreateBookingInput) {
     isMember,
     discount,
     finalServicePrice,
-    settings,
-  };
-}
-
-/** Public UPI payment details for the payment screen (admin-editable). */
-export type PaymentSettings = {
-  upiId: string;
-  payeeName: string;
-  qrUrl: string;
-};
-
-/** Resolve the QR image, treating blanks and the old SVG placeholder as unset. */
-function normalizeQrUrl(value: string | null | undefined): string {
-  const v = (value ?? "").trim();
-  if (!v || v === "/upi-qr.svg") return "/QR.png";
-  return v;
-}
-
-export async function getPaymentSettings(): Promise<PaymentSettings> {
-  const admin = createAdminClient();
-  const { data } = await admin
-    .from("app_settings")
-    .select("upi_id, payee_name, upi_qr_url")
-    .eq("id", "default")
-    .maybeSingle();
-  const row = data as { upi_id: string; payee_name: string; upi_qr_url: string } | null;
-  return {
-    upiId: row?.upi_id ?? "",
-    payeeName: row?.payee_name ?? "Rashi Nail Art Studio",
-    qrUrl: normalizeQrUrl(row?.upi_qr_url),
   };
 }
 
 /**
- * Customer uploads their UPI payment screenshot for a held booking. The
- * unguessable appointment id (returned only to the booker) is the capability;
- * the booking must still be awaiting payment. Validates the image server-side,
- * stores it in the private bucket, and flips the booking to `payment_uploaded`.
+ * Create a Cashfree order for a held booking's ₹50 fee. The unguessable
+ * appointment id (returned only to the booker) is the capability; the booking
+ * must still be awaiting payment. The amount is fixed SERVER-SIDE (BOOKING_FEE)
+ * — any client-supplied value is ignored. Also refreshes `created_at` so the
+ * 5-minute stale-hold sweep can't reclaim the slot while the customer is away on
+ * Cashfree's hosted page. Returns the payment session id for the checkout SDK.
  */
-export async function uploadBookingProof(formData: FormData) {
-  const parsed = uploadProofSchema.safeParse({ id: formData.get("appointmentId") });
+export async function createBookingOrder(input: { appointmentId: string }) {
+  const parsed = z.object({ appointmentId: z.string().uuid() }).safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid booking reference." };
-
-  const valid = validateProofFile(formData.get("screenshot"));
-  if (!valid.ok) return { ok: false as const, error: valid.error };
-
   const admin = createAdminClient();
-  const { data: apptData } = await admin
+
+  const { data } = await admin
     .from("appointments")
-    .select("id, payment_status")
-    .eq("id", parsed.data.id)
+    .select("id, client_name, phone, payment_status")
+    .eq("id", parsed.data.appointmentId)
     .maybeSingle();
-  const appt = apptData as { id: string; payment_status: string } | null;
+  const appt = data as
+    | { id: string; client_name: string; phone: string; payment_status: string }
+    | null;
   if (!appt) return { ok: false as const, error: "Booking not found. Please start again." };
-  if (appt.payment_status !== "pending_payment" && appt.payment_status !== "payment_uploaded") {
-    return { ok: false as const, error: "This booking can no longer accept a payment proof." };
+  if (appt.payment_status !== "pending_payment") {
+    return { ok: false as const, error: "This booking is no longer awaiting payment." };
   }
 
-  const uploaded = await uploadProof(admin, "bookings", appt.id, valid.file);
-  if (!uploaded.ok) return { ok: false as const, error: uploaded.error };
+  const orderId = orderIdFor("booking", appt.id);
+  try {
+    const order = await createOrder({
+      orderId,
+      amount: BOOKING_FEE,
+      customer: {
+        id: appt.id,
+        name: appt.client_name,
+        phone: appt.phone,
+        email: synthEmail(appt.phone),
+      },
+      returnUrl: `${siteUrl()}/booking/confirm?order_id=${orderId}`,
+      notifyUrl: `${siteUrl()}/api/webhooks/cashfree`,
+    });
+    // Store the order and extend the hold. Guarded so a row that already advanced
+    // (e.g. a fast webhook) is never disturbed.
+    await admin
+      .from("appointments")
+      .update({ cashfree_order_id: orderId, created_at: new Date().toISOString() })
+      .eq("id", appt.id)
+      .eq("payment_status", "pending_payment");
+    return { ok: true as const, paymentSessionId: order.payment_session_id, orderId };
+  } catch (e) {
+    return {
+      ok: false as const,
+      error: e instanceof Error ? e.message : "Could not start payment. Please try again.",
+    };
+  }
+}
 
-  const { error } = await admin
+/** Full details rendered on the confirmation page and printed on the receipt. */
+export type BookingReceipt = {
+  clientName: string;
+  phone: string;
+  branch: string;
+  date: string; // appointment_date (yyyy-MM-dd)
+  timeSlot: string;
+  service: string;
+  staffName: string;
+  amount: number; // ₹ booking fee paid online
+  orderId: string;
+  cfPaymentId: string | null;
+  paymentMethod: string | null;
+};
+
+export type BookingConfirmResult =
+  | { status: "confirmed"; booking: BookingReceipt }
+  | { status: "pending" }
+  | { status: "failed"; reason?: string }
+  | { status: "error"; error: string };
+
+/**
+ * Reconcile a booking against Cashfree after the customer returns from checkout.
+ * NEVER trusts the redirect — it fetches the authoritative order status from
+ * Cashfree (Get Order). On PAID it flips the booking to `verified` with a guarded
+ * update (only a still-pending row), so it's idempotent and safe to call on every
+ * refresh and alongside the webhook. Returns everything the receipt needs.
+ */
+export async function confirmBookingByOrder(input: { orderId: string }): Promise<BookingConfirmResult> {
+  const orderId = String(input?.orderId ?? "");
+  const parsed = parseOrderId(orderId);
+  if (!parsed || parsed.kind !== "booking") {
+    return { status: "error", error: "Invalid payment reference." };
+  }
+  const admin = createAdminClient();
+
+  let order;
+  try {
+    order = await getOrder(orderId);
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : "Could not verify payment." };
+  }
+
+  if (order.order_status !== "PAID") {
+    if (order.order_status === "ACTIVE") return { status: "pending" };
+    return { status: "failed", reason: order.order_status };
+  }
+
+  // Paid — enrich with the payment id/method and flip to verified idempotently.
+  const pay = await getSuccessfulPayment(orderId);
+  await admin
     .from("appointments")
     .update({
-      upi_screenshot_url: uploaded.path,
-      uploaded_at: new Date().toISOString(),
-      payment_status: "payment_uploaded",
+      payment_status: "verified",
+      paid_at: new Date().toISOString(),
+      verified_at: new Date().toISOString(),
+      cf_payment_id: pay?.cfPaymentId ?? null,
+      payment_method: pay?.method ?? null,
+      rejection_reason: null,
     })
-    .eq("id", appt.id);
-  if (error) return { ok: false as const, error: error.message };
+    .eq("id", parsed.recordId)
+    .eq("payment_status", "pending_payment");
 
-  return { ok: true as const };
+  const { data } = await admin
+    .from("appointments")
+    .select(
+      "client_name, phone, branch, appointment_date, time_slot, service, staff_name, amount, cf_payment_id, payment_method",
+    )
+    .eq("id", parsed.recordId)
+    .maybeSingle();
+  const row = data as
+    | {
+        client_name: string;
+        phone: string;
+        branch: string;
+        appointment_date: string;
+        time_slot: string;
+        service: string;
+        staff_name: string;
+        amount: number;
+        cf_payment_id: string | null;
+        payment_method: string | null;
+      }
+    | null;
+  if (!row) return { status: "error", error: "Booking not found." };
+
+  // Journal the confirmation. The unique cf_payment_id index dedupes against the
+  // webhook — a duplicate simply returns an error we ignore.
+  if (row.cf_payment_id) {
+    await admin.from("payment_events").insert({
+      event_type: "RETURN_CONFIRM",
+      order_id: orderId,
+      cf_payment_id: row.cf_payment_id,
+      kind: "booking",
+      source: "return",
+      processed: true,
+      raw: { order_status: order.order_status },
+    });
+  }
+
+  await notifyCustomer({
+    phone: row.phone,
+    message: `Hi ${row.client_name}, your Rashi Nail Art Studio booking is confirmed. See you soon!`,
+  });
+
+  return {
+    status: "confirmed",
+    booking: {
+      clientName: row.client_name,
+      phone: row.phone,
+      branch: row.branch,
+      date: row.appointment_date,
+      timeSlot: row.time_slot,
+      service: row.service,
+      staffName: row.staff_name,
+      amount: row.amount,
+      orderId,
+      cfPaymentId: row.cf_payment_id,
+      paymentMethod: row.payment_method,
+    },
+  };
 }
 
 /** Free a still-pending hold immediately (e.g. the customer abandoned payment). */

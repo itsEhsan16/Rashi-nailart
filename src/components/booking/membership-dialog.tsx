@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Crown, Loader2, CheckCircle2 } from "lucide-react";
+import { Crown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -20,24 +20,23 @@ import {
 } from "@/components/ui/dialog";
 
 import { membershipSchema, type MembershipValues } from "@/lib/validations/membership";
-import { createMembership, uploadMembershipProof } from "@/lib/actions/membership";
-import { PaymentScreen } from "@/components/booking/payment-screen";
-import type { PaymentSettings } from "@/lib/actions/booking";
+import { createMembership, createMembershipOrder } from "@/lib/actions/membership";
+import { PaySecureScreen } from "@/components/booking/pay-secure-screen";
+import { redirectToCheckout } from "@/lib/cashfree-checkout";
 
-type Pending = { paymentId: string; amount: number; settings: PaymentSettings };
+type Pending = { paymentId: string; amount: number; orderId?: string };
 type StoredPending = Pending & { createdAt: number };
 
 const PENDING_KEY = "rashi:pending-membership";
 // Memberships have no slot to hold, so we keep the in-flight payment around for a
-// generous window — long enough to leave for the UPI app (where a mobile browser,
-// esp. iOS Safari, may discard the backgrounded tab) and return to upload proof.
+// generous window — long enough to leave for the payment page (where a mobile
+// browser may discard the backgrounded tab) and return to complete it.
 const PENDING_TTL_MS = 6 * 60 * 60 * 1000;
 
 export function MembershipDialog({ price }: { price: number }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
-  const [done, setDone] = useState(false);
   const {
     register,
     handleSubmit,
@@ -48,9 +47,8 @@ export function MembershipDialog({ price }: { price: number }) {
     defaultValues: { client_name: "", phone: "" },
   });
 
-  // Persist the in-flight payment so it survives the UPI app-switch the "Pay in
-  // your UPI app" button invites — and restore it on return, reopening straight
-  // to the upload step so the customer can still submit their screenshot.
+  // Persist the in-flight payment so it survives leaving for the payment page —
+  // and restore it on return, reopening straight to the pay step.
   const persistPending = useCallback((p: Pending | null) => {
     setPending(p);
     try {
@@ -67,7 +65,7 @@ export function MembershipDialog({ price }: { price: number }) {
       if (!raw) return;
       const saved = JSON.parse(raw) as StoredPending;
       if (Date.now() - (saved.createdAt ?? 0) < PENDING_TTL_MS) {
-        setPending({ paymentId: saved.paymentId, amount: saved.amount, settings: saved.settings });
+        setPending({ paymentId: saved.paymentId, amount: saved.amount, orderId: saved.orderId });
         setOpen(true);
       } else {
         localStorage.removeItem(PENDING_KEY);
@@ -80,7 +78,6 @@ export function MembershipDialog({ price }: { price: number }) {
   function resetAll() {
     reset();
     persistPending(null);
-    setDone(false);
   }
 
   async function onSubmit(values: MembershipValues) {
@@ -91,13 +88,22 @@ export function MembershipDialog({ price }: { price: number }) {
         toast.error(res.error);
         return;
       }
-      persistPending({ paymentId: res.paymentId, amount: res.amount, settings: res.settings });
+      persistPending({ paymentId: res.paymentId, amount: res.amount });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setSubmitting(false);
     }
   }
+
+  /** Create the Cashfree order and hand off to the hosted checkout (redirect). */
+  const payNow = useCallback(async () => {
+    if (!pending) return;
+    const res = await createMembershipOrder({ paymentId: pending.paymentId });
+    if (!res.ok) throw new Error(res.error);
+    persistPending({ ...pending, orderId: res.orderId });
+    await redirectToCheckout(res.paymentSessionId);
+  }, [pending, persistPending]);
 
   return (
     <Dialog
@@ -113,37 +119,18 @@ export function MembershipDialog({ price }: { price: number }) {
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        {done ? (
-          <div className="text-center py-4">
-            <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500/15 text-emerald-600 grid place-items-center">
-              <CheckCircle2 className="h-7 w-7" />
-            </div>
-            <DialogTitle className="font-display text-xl">Thanks for joining! ✨</DialogTitle>
-            <DialogDescription className="mt-2">
-              We&apos;ve received your membership payment — your benefits will be active shortly.
-            </DialogDescription>
-            <Button className="mt-6" variant="outline" onClick={() => setOpen(false)}>
-              Close
-            </Button>
-          </div>
-        ) : pending ? (
+        {pending ? (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Crown className="h-5 w-5 text-primary" /> Pay for your membership
               </DialogTitle>
             </DialogHeader>
-            <PaymentScreen
-              id={pending.paymentId}
-              idField="paymentId"
+            <PaySecureScreen
               amount={pending.amount}
-              settings={pending.settings}
-              uploadAction={uploadMembershipProof}
               forLabel="membership fee"
-              onUploaded={() => {
-                setDone(true);
-                persistPending(null);
-              }}
+              summaryLine="1-Year Membership · 50% off nail art"
+              onPay={payNow}
             />
           </>
         ) : (

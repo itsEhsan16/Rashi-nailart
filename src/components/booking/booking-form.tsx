@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, Crown, Loader2, CheckCircle2 } from "lucide-react";
+import { CalendarIcon, Crown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -29,11 +29,11 @@ import {
   checkMembership,
   getBookedSlots,
   createBooking,
-  uploadBookingProof,
+  createBookingOrder,
   cancelPendingBooking,
-  type PaymentSettings,
 } from "@/lib/actions/booking";
-import { PaymentScreen } from "@/components/booking/payment-screen";
+import { PaySecureScreen } from "@/components/booking/pay-secure-screen";
+import { redirectToCheckout } from "@/lib/cashfree-checkout";
 import { BookingSteps } from "@/components/booking/booking-steps";
 import type { ServiceOption, BranchOption, StaffOption } from "@/lib/catalog";
 import { PENDING_HOLD_MINUTES } from "@/lib/salon-data";
@@ -56,29 +56,20 @@ type Summary = {
 };
 
 /** Persisted in localStorage so an in-flight payment survives the browser
- *  discarding the tab when the customer switches to their UPI app to pay. */
+ *  discarding the tab when the customer leaves for Cashfree's hosted page. The
+ *  confirmation itself happens on /booking/confirm; this only lets a customer who
+ *  returns without paying resume the "Pay" step while the 5-minute hold lasts. */
 type PendingPayment = {
   appointmentId: string;
   amount: number;
-  settings: PaymentSettings;
+  /** Cashfree order id, set once payment is started (fallback reconcile key). */
+  orderId?: string;
   summary: Summary;
   /** ms epoch when the slot was held — used to drop a stale hold on restore. */
   createdAt: number;
 };
 
 const PENDING_KEY = "rashi:pending-booking";
-
-/** A confirmed booking stays on screen for 24h (across refreshes) until the
- *  customer explicitly books another — so they keep their appointment details
- *  handy after closing or reopening the tab. */
-type ConfirmedBooking = {
-  summary: Summary;
-  /** ms epoch when the booking was confirmed (proof uploaded). */
-  confirmedAt: number;
-};
-
-const CONFIRMED_KEY = "rashi:confirmed-booking";
-const CONFIRMED_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function BookingForm({ services, timeSlots, branches, staff, bookingFee }: Props) {
   const {
@@ -87,7 +78,6 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     handleSubmit,
     watch,
     setValue,
-    reset,
     formState: { errors },
   } = useForm<BookingFormValues>({
     resolver: zodResolver(bookingFormSchema),
@@ -108,27 +98,13 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pending, setPending] = useState<PendingPayment | null>(null);
-  const [submitted, setSubmitted] = useState<Summary | null>(null);
   const [restoring, setRestoring] = useState(true);
 
-  // On mount, restore saved state so a refresh/navigation doesn't lose it:
-  //  1. A confirmed booking stays for 24h until the customer books another, so
-  //     they keep their appointment details handy after reopening the tab.
-  //  2. Otherwise an in-flight payment hold is restored (e.g. after returning
-  //     from the UPI app) so the customer can still upload proof and keep the
-  //     slot. A hold older than the window was reclaimed server-side — drop it.
+  // On mount, restore an in-flight payment hold so a refresh / return from the
+  // payment page doesn't lose it (the customer can resume "Pay" within the hold
+  // window). A hold older than the window was reclaimed server-side — drop it.
   useEffect(() => {
     try {
-      const confRaw = localStorage.getItem(CONFIRMED_KEY);
-      if (confRaw) {
-        const savedConf = JSON.parse(confRaw) as ConfirmedBooking;
-        if (Date.now() - (savedConf.confirmedAt ?? 0) < CONFIRMED_TTL_MS) {
-          setSubmitted(savedConf.summary);
-          return; // confirmation wins — don't also restore a payment hold
-        }
-        localStorage.removeItem(CONFIRMED_KEY);
-      }
-
       const raw = localStorage.getItem(PENDING_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw) as PendingPayment;
@@ -154,27 +130,16 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
 
   /**
    * Free the in-flight hold when the customer explicitly backs out — the booking
-   * is never confirmed without an uploaded proof. We only release on this
-   * deliberate action (not on tab-hide / app-switch): paying over UPI means
-   * leaving the browser for the UPI app, so auto-releasing on visibility/unload
-   * would wrongly cancel a payment in progress. True abandonment is reclaimed
-   * server-side by sweepStalePendingHolds and meanwhile hidden from dashboards.
+   * is never confirmed without a completed payment. We only release on this
+   * deliberate action (not on tab-hide / app-switch): paying means leaving the
+   * browser for Cashfree/UPI, so auto-releasing on visibility/unload would wrongly
+   * cancel a payment in progress. True abandonment is reclaimed server-side by
+   * sweepStalePendingHolds and meanwhile hidden from dashboards.
    */
   const releasePending = useCallback(() => {
     if (pending) void cancelPendingBooking({ appointmentId: pending.appointmentId });
     persistPending(null);
   }, [pending, persistPending]);
-
-  // Dismiss the 24h confirmation and return to a fresh form — the only way the
-  // customer leaves the "You're booked" screen short of the 24h expiry.
-  const clearConfirmed = useCallback(() => {
-    setSubmitted(null);
-    try {
-      localStorage.removeItem(CONFIRMED_KEY);
-    } catch {
-      /* storage may be unavailable */
-    }
-  }, []);
 
   const phone = watch("phone");
   const branch = watch("branch");
@@ -296,7 +261,6 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
       persistPending({
         appointmentId: res.appointmentId,
         amount: res.amount,
-        settings: res.settings,
         createdAt: Date.now(),
         summary: {
           service: values.service,
@@ -316,26 +280,18 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     }
   }
 
-  function onProofUploaded() {
-    if (pending) {
-      setSubmitted(pending.summary);
-      // Persist the confirmation so it survives a refresh for the next 24h.
-      try {
-        const payload: ConfirmedBooking = { summary: pending.summary, confirmedAt: Date.now() };
-        localStorage.setItem(CONFIRMED_KEY, JSON.stringify(payload));
-      } catch {
-        /* storage may be unavailable */
-      }
-    }
-    persistPending(null);
-    reset();
-    setIsMember(false);
-    setBookedSlots([]);
-    toast.success("You're booked! ✨");
-  }
+  /** Create the Cashfree order and hand off to the hosted checkout (redirect). */
+  const payNow = useCallback(async () => {
+    if (!pending) return;
+    const res = await createBookingOrder({ appointmentId: pending.appointmentId });
+    if (!res.ok) throw new Error(res.error);
+    // Remember the order id so a return can reconcile even without the URL param.
+    persistPending({ ...pending, orderId: res.orderId });
+    await redirectToCheckout(res.paymentSessionId);
+  }, [pending, persistPending]);
 
   // While we read localStorage on mount, hold a neutral placeholder so a saved
-  // confirmation/payment screen restores without flashing the empty form first.
+  // payment screen restores without flashing the empty form first.
   if (restoring) {
     return (
       <Card className="grid min-h-55 place-items-center rounded-xl border-border/60 p-8 shadow-elegant md:p-10">
@@ -344,59 +300,17 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     );
   }
 
-  // Booking confirmation.
-  if (submitted) {
-    return (
-      <div className="space-y-6">
-        <BookingSteps current={2} />
-        <Card className="rounded-xl p-8 md:p-10 text-center shadow-elegant border-border/60">
-          <div className="mx-auto mb-4 h-14 w-14 rounded-full bg-emerald-500/15 text-emerald-600 grid place-items-center">
-            <CheckCircle2 className="h-7 w-7" />
-          </div>
-          <h3 className="font-display text-2xl font-semibold">You&apos;re booked! ✨</h3>
-          <p className="mt-2 text-muted-foreground">
-            {submitted.service} with {submitted.staff} at {submitted.branch}
-          </p>
-          <p className="text-muted-foreground">
-            {submitted.date} · {slotStartLabel(submitted.slot)}
-          </p>
-          {submitted.storeNumber && (
-            <p className="text-muted-foreground">Studio number: {submitted.storeNumber}</p>
-          )}
-          <div className="mx-auto mt-5 max-w-sm rounded-lg border border-border/60 bg-muted/40 px-4 py-3 text-left text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">What happens next</p>
-            <p className="mt-1">
-              We&apos;ve received your screenshot and will verify your ₹{bookingFee} payment. Nothing
-              more to pay online — just arrive at your slot. Pay the balance at the studio.
-            </p>
-            <p className="mt-2">
-              Rescheduling isn&apos;t possible. If you miss this appointment, the ₹{bookingFee}{" "}
-              fee won&apos;t be refunded and you&apos;ll need to book again.
-            </p>
-          </div>
-          <Button className="mt-6" variant="outline" onClick={clearConfirmed}>
-            Book another appointment
-          </Button>
-        </Card>
-      </div>
-    );
-  }
-
-  // Payment screen — held booking awaiting the UPI screenshot.
+  // Payment screen — held booking awaiting the Cashfree payment.
   if (pending) {
     return (
       <div className="space-y-6">
         <BookingSteps current={1} />
-        <PaymentScreen
-          id={pending.appointmentId}
-          idField="appointmentId"
+        <PaySecureScreen
           amount={pending.amount}
-          settings={pending.settings}
-          uploadAction={uploadBookingProof}
           forLabel="booking fee"
           holdExpiresAt={pending.createdAt + PENDING_HOLD_MINUTES * 60 * 1000}
           summaryLine={`${pending.summary.service} · ${pending.summary.date} · ${slotStartLabel(pending.summary.slot)}`}
-          onUploaded={onProofUploaded}
+          onPay={payNow}
         />
         <button
           type="button"
@@ -688,8 +602,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         </Button>
         <p className="text-xs text-center text-muted-foreground">
           We&apos;ll hold your slot for {PENDING_HOLD_MINUTES} minutes while you pay the ₹{bookingFee}{" "}
-          booking fee over UPI and upload the screenshot to confirm. This ₹{bookingFee} is deducted
-          from your total.
+          booking fee securely online to confirm. This ₹{bookingFee} is deducted from your total.
         </p>
         </form>
       </Card>

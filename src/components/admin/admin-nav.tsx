@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  CreditCard,
   CalendarDays,
   Crown,
   SlidersHorizontal,
@@ -28,7 +27,6 @@ type AdminNavItem = { href: string; label: string; icon: LucideIcon };
  */
 const ADMIN_NAV: AdminNavItem[] = [
   { href: "/admin/overview", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/payments", label: "Payments", icon: CreditCard },
   { href: "/admin/bookings", label: "Bookings", icon: CalendarDays },
   { href: "/admin/members", label: "Members", icon: Crown },
   { href: "/admin/manage", label: "Manage", icon: SlidersHorizontal },

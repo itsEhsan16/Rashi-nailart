@@ -49,6 +49,8 @@ export type Database = {
           amount: number
           appointment_date: string
           branch: Database["public"]["Enums"]["branch"]
+          cashfree_order_id: string | null
+          cf_payment_id: string | null
           client_name: string
           completed: boolean
           completed_at: string | null
@@ -56,6 +58,8 @@ export type Database = {
           discount_applied: number
           id: string
           is_member: boolean
+          paid_at: string | null
+          payment_method: string | null
           payment_mode: string | null
           payment_status: string
           phone: string
@@ -74,6 +78,8 @@ export type Database = {
           amount?: number
           appointment_date: string
           branch: Database["public"]["Enums"]["branch"]
+          cashfree_order_id?: string | null
+          cf_payment_id?: string | null
           client_name: string
           completed?: boolean
           completed_at?: string | null
@@ -81,6 +87,8 @@ export type Database = {
           discount_applied?: number
           id?: string
           is_member?: boolean
+          paid_at?: string | null
+          payment_method?: string | null
           payment_mode?: string | null
           payment_status?: string
           phone: string
@@ -99,6 +107,8 @@ export type Database = {
           amount?: number
           appointment_date?: string
           branch?: Database["public"]["Enums"]["branch"]
+          cashfree_order_id?: string | null
+          cf_payment_id?: string | null
           client_name?: string
           completed?: boolean
           completed_at?: string | null
@@ -106,6 +116,8 @@ export type Database = {
           discount_applied?: number
           id?: string
           is_member?: boolean
+          paid_at?: string | null
+          payment_method?: string | null
           payment_mode?: string | null
           payment_status?: string
           phone?: string
@@ -221,12 +233,16 @@ export type Database = {
         Row: {
           amount: number
           appointment_id: string | null
+          cashfree_order_id: string | null
+          cf_payment_id: string | null
           client_name: string | null
           created_at: string
           currency: string
           id: string
           membership_id: string | null
           metadata: Json | null
+          paid_at: string | null
+          payment_method: string | null
           phone: string | null
           purpose: string
           rejection_reason: string | null
@@ -240,12 +256,16 @@ export type Database = {
         Insert: {
           amount: number
           appointment_id?: string | null
+          cashfree_order_id?: string | null
+          cf_payment_id?: string | null
           client_name?: string | null
           created_at?: string
           currency?: string
           id?: string
           membership_id?: string | null
           metadata?: Json | null
+          paid_at?: string | null
+          payment_method?: string | null
           phone?: string | null
           purpose: string
           rejection_reason?: string | null
@@ -259,12 +279,16 @@ export type Database = {
         Update: {
           amount?: number
           appointment_id?: string | null
+          cashfree_order_id?: string | null
+          cf_payment_id?: string | null
           client_name?: string | null
           created_at?: string
           currency?: string
           id?: string
           membership_id?: string | null
           metadata?: Json | null
+          paid_at?: string | null
+          payment_method?: string | null
           phone?: string | null
           purpose?: string
           rejection_reason?: string | null
@@ -284,6 +308,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      payment_events: {
+        Row: {
+          cf_payment_id: string | null
+          event_type: string
+          id: string
+          kind: string | null
+          order_id: string | null
+          processed: boolean
+          raw: Json
+          received_at: string
+          source: string
+        }
+        Insert: {
+          cf_payment_id?: string | null
+          event_type: string
+          id?: string
+          kind?: string | null
+          order_id?: string | null
+          processed?: boolean
+          raw: Json
+          received_at?: string
+          source?: string
+        }
+        Update: {
+          cf_payment_id?: string | null
+          event_type?: string
+          id?: string
+          kind?: string | null
+          order_id?: string | null
+          processed?: boolean
+          raw?: Json
+          received_at?: string
+          source?: string
+        }
+        Relationships: []
       }
       branches: {
         Row: {
