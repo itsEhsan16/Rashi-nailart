@@ -60,6 +60,41 @@ export function slotStartMinutes(slot: string): number {
   return time24 ? minutesOfDay(time24) : 0;
 }
 
+/**
+ * Absolute epoch-ms of a slot's START, interpreting appointment_date + slot in IST
+ * (the studio is in India: UTC+5:30, no DST). The offset is pinned so the result is
+ * correct even on a UTC server (e.g. Vercel). Returns NaN if the date is unparseable
+ * (so callers can fail open rather than block on a malformed row).
+ *
+ *   appointmentStartMs("2026-07-03", "11:45 AM – 1:15 PM")
+ *     -> instant of 2026-07-03 11:45 IST
+ */
+export function appointmentStartMs(appointmentDate: string, slot: string): number {
+  const base = Date.parse(`${appointmentDate}T00:00:00+05:30`);
+  return Number.isNaN(base) ? NaN : base + slotStartMinutes(slot) * 60_000;
+}
+
+/**
+ * The `count` most recent months as "YYYY-MM", newest first, starting at `current`.
+ *   recentMonths("2026-03", 3) -> ["2026-03", "2026-02", "2026-01"]
+ * Pure string math (no Date) so it's safe anywhere and never slips across timezones.
+ */
+export function recentMonths(current: string, count: number): string[] {
+  const [y, m] = current.split("-").map(Number);
+  let year = y;
+  let mon = m;
+  const out: string[] = [];
+  for (let i = 0; i < count; i++) {
+    out.push(`${year}-${String(mon).padStart(2, "0")}`);
+    mon -= 1;
+    if (mon < 1) {
+      mon = 12;
+      year -= 1;
+    }
+  }
+  return out;
+}
+
 /** Local "YYYY-MM-DD" (NOT UTC) — matches appointment_date which is a calendar date. */
 export function formatLocalDate(d: Date): string {
   const y = d.getFullYear();

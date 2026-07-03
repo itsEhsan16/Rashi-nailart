@@ -574,6 +574,10 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                 charged now.
               </p>
             )}
+            <p className="text-xs text-muted-foreground">
+              One service per booking. To book another service, please make a separate appointment
+              (₹{bookingFee} booking fee applies to each).
+            </p>
           </div>
         </div>
 

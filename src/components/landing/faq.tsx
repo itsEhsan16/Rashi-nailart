@@ -6,6 +6,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { CANCELLATION_CUTOFF_HOURS } from "@/lib/salon-data";
 
 const FAQS: { q: string; a: string }[] = [
   {
@@ -22,7 +23,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "Can I reschedule or cancel?",
-    a: "Rescheduling isn't possible. If you miss your appointment, the ₹50 confirmation fee won't be refunded and you'll need to book again.",
+    a: `Rescheduling isn't possible. You can cancel only up to ${CANCELLATION_CUTOFF_HOURS} hours before your appointment by contacting the studio — after that the slot is locked in. If you miss your appointment, the ₹50 confirmation fee won't be refunded and you'll need to book again.`,
   },
   {
     q: "Where are you located?",

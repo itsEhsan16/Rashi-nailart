@@ -2,18 +2,14 @@ import { formatLocalDate } from "@/lib/utils";
 import { scheduleBucket } from "@/lib/booking-sort";
 import type { BookingRow } from "@/lib/actions/admin";
 
-/** Earnings for a completed task = service price + in-studio extras (the ₹50 booking fee is the salon's). */
+/**
+ * What the client paid for a booking = service price + in-studio extras. This is
+ * also the artist's earnings and the base for their 10% commission. The ₹50 online
+ * booking fee is an advance already inside the service price (in-store the client
+ * pays price − ₹50), so it is counted here exactly once — not added on top.
+ */
 export function earnedAmount(r: BookingRow): number {
   return r.price + r.extras_total;
-}
-
-/**
- * Total a client paid for one booking: net service price + in-store extras + the
- * ₹50 online booking fee. This is the base the artist's monthly commission is on
- * (the salon counts the whole amount the client paid, fee included).
- */
-export function clientPaidAmount(r: BookingRow): number {
-  return r.price + r.extras_total + r.amount;
 }
 
 export type StaffStats = {
@@ -50,7 +46,7 @@ export function computeStaffStats(rows: BookingRow[], now: number): StaffStats {
 export type MonthlyStats = {
   month: string; // "2026-06"
   appointmentCount: number; // completed & verified that month
-  totalPaid: number; // Σ clientPaidAmount = money clients paid (incl. ₹50 fee)
+  totalPaid: number; // Σ earnedAmount = service + extras clients paid (₹50 counted once)
   commission: number; // 10% of totalPaid, rounded
 };
 
@@ -65,7 +61,7 @@ export function monthsWithData(rows: BookingRow[]): string[] {
 
 /**
  * One artist's performance for a single month: services done (completed + payment
- * verified), the total clients paid, and their 10% commission on that.
+ * verified), the total clients paid (service + extras), and their 10% commission.
  */
 export function computeMonthlyStats(rows: BookingRow[], targetMonth: string): MonthlyStats {
   const inMonth = rows.filter(
@@ -74,7 +70,7 @@ export function computeMonthlyStats(rows: BookingRow[], targetMonth: string): Mo
       r.payment_status === "verified" &&
       r.appointment_date.slice(0, 7) === targetMonth,
   );
-  const totalPaid = inMonth.reduce((s, r) => s + clientPaidAmount(r), 0);
+  const totalPaid = inMonth.reduce((s, r) => s + earnedAmount(r), 0);
   return {
     month: targetMonth,
     appointmentCount: inMonth.length,

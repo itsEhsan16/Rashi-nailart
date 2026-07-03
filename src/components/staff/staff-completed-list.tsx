@@ -63,11 +63,15 @@ export function StaffCompletedList({
     }
     return [...byDay.entries()]
       .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([date, items]) => ({
-        date,
-        items: items.sort((x, y) => slotStartMinutes(x.time_slot) - slotStartMinutes(y.time_slot)),
-        earnings: items.reduce((s, r) => s + earnedAmount(r), 0),
-      }));
+      .map(([date, items]) => {
+        const earnings = items.reduce((s, r) => s + earnedAmount(r), 0);
+        return {
+          date,
+          items: items.sort((x, y) => slotStartMinutes(x.time_slot) - slotStartMinutes(y.time_slot)),
+          earnings,
+          commission: Math.round(earnings * 0.1), // 10% of that day's earnings
+        };
+      });
   }, [rows, day]);
 
   if (rows.length === 0) {
@@ -109,6 +113,7 @@ export function StaffCompletedList({
             </h3>
             <span className="text-xs text-muted-foreground">
               {g.items.length} task{g.items.length === 1 ? "" : "s"} · {inr(g.earnings)}
+              <span className="ml-1 text-primary">· {inr(g.commission)} commission</span>
             </span>
           </div>
           {g.items.map((row) => (

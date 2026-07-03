@@ -161,6 +161,7 @@ export function TeamPanel({ role, branch }: { role: UserRole; branch: string | n
     return (
       <StaffDetail
         staff={selected}
+        role={role}
         canEdit
         onBack={() => setSelected(null)}
         onPhotoChanged={load}

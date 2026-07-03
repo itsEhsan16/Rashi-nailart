@@ -495,6 +495,50 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_salaries: {
+        Row: {
+          absent_days: number
+          base_salary: number
+          created_at: string
+          id: string
+          month: string
+          per_day_deduction: number
+          staff_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          absent_days?: number
+          base_salary?: number
+          created_at?: string
+          id?: string
+          month: string
+          per_day_deduction?: number
+          staff_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          absent_days?: number
+          base_salary?: number
+          created_at?: string
+          id?: string
+          month?: string
+          per_day_deduction?: number
+          staff_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_salaries_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staff_schedules: {
         Row: {
           created_at: string
