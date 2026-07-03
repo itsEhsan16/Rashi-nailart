@@ -16,6 +16,7 @@ import { StaffStatsRow } from "./staff-stats";
 import { StaffTaskList } from "./staff-task-list";
 import { StaffCompletedList } from "./staff-completed-list";
 import { StaffMonthlyView } from "./staff-monthly-view";
+import { StaffSalaryCard } from "./staff-salary-card";
 
 export function StaffDashboard({ greetingName }: { greetingName: string }) {
   const [rows, setRows] = useState<BookingRow[]>([]);
@@ -111,6 +112,7 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
                 Completed{completedRows.length > 0 ? ` (${completedRows.length})` : ""}
               </TabsTrigger>
               <TabsTrigger value="monthly">Monthly</TabsTrigger>
+              <TabsTrigger value="salary">Salary</TabsTrigger>
             </TabsList>
             <TabsContent value="tasks">
               <StaffTaskList
@@ -126,6 +128,9 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
             </TabsContent>
             <TabsContent value="monthly">
               <StaffMonthlyView rows={rows} currentMonth={currentMonth} />
+            </TabsContent>
+            <TabsContent value="salary">
+              <StaffSalaryCard currentMonth={currentMonth} />
             </TabsContent>
           </Tabs>
         </>

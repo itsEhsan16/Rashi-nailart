@@ -22,8 +22,8 @@ const monthLabel = (m: string) => format(new Date(`${m}-01T00:00:00`), "MMMM yyy
 
 /**
  * The artist's monthly sales: how many services they did, the total clients paid
- * (service + extras + ₹50 fee), and their 10% commission on that. A month picker
- * lists every month with completed work, newest first.
+ * (service + extras), and their 10% commission on that. A month picker lists every
+ * month with completed work, newest first.
  */
 export function StaffMonthlyView({
   rows,
@@ -72,7 +72,7 @@ export function StaffMonthlyView({
           value={inr(stats.totalPaid)}
           icon={<IndianRupee className="h-5 w-5" />}
           accent="primary"
-          hint="service + extras + ₹50 fee"
+          hint="service + extras"
         />
         <StatCard
           label="Your commission (10%)"

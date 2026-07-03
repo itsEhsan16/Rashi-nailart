@@ -13,8 +13,12 @@ import {
   MAX_PROOF_BYTES,
   isAcceptedProofFile,
   PAYMENT_MODE_VALUES,
+  SLOT_HOLDING_STATUSES,
+  CANCELLATION_CUTOFF_MS,
+  CANCELLATION_CUTOFF_HOURS,
   type PaymentMode,
 } from "@/lib/salon-data";
+import { appointmentStartMs } from "@/lib/utils";
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { UPI_VPA_RE } from "@/lib/upi";
 import { isMissingStaffPhotoColumn } from "@/lib/staff-photos";
@@ -192,6 +196,27 @@ export async function cancelBooking(input: { id: string }) {
   if (!parsed.success) return { ok: false as const, error: "Invalid id" };
   const admin = createAdminClient();
   if (!(await scopedAppointmentMatch(admin, profile, parsed.data.id))) return UNAUTHORIZED;
+
+  // Managers may cancel only more than the cutoff window before the start; admin is exempt.
+  if (profile.role === "manager") {
+    const { data } = await admin
+      .from("appointments")
+      .select("appointment_date, time_slot")
+      .eq("id", parsed.data.id)
+      .maybeSingle();
+    const row = data as { appointment_date: string; time_slot: string } | null;
+    if (row) {
+      const startMs = appointmentStartMs(row.appointment_date, row.time_slot);
+      // NaN (unparseable date) fails open, matching the app's lenient slot handling.
+      if (!Number.isNaN(startMs) && startMs - Date.now() < CANCELLATION_CUTOFF_MS) {
+        return {
+          ok: false as const,
+          error: `Bookings can only be cancelled more than ${CANCELLATION_CUTOFF_HOURS} hours before the start time. Please ask an admin.`,
+        };
+      }
+    }
+  }
+
   const { error } = await admin
     .from("appointments")
     .update({ payment_status: "cancelled" })
@@ -209,6 +234,129 @@ export async function deleteBooking(input: { id: string }) {
   if (!(await scopedAppointmentMatch(admin, profile, parsed.data.id))) return UNAUTHORIZED;
   const { error } = await admin.from("appointments").delete().eq("id", parsed.data.id);
   if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+// ─────────────────── Reassign a booking to another artist ────────────────────
+export type ReassignCandidate = { staffId: string; name: string };
+
+/**
+ * Artists in the booking's branch who could take over this slot: scheduled to
+ * work that weekday+slot AND not already holding that slot, excluding the
+ * currently-assigned artist. Used by the manager when a walk-in's artist is busy.
+ */
+export async function listReassignCandidates(input: { id: string }) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, candidates: [] as ReassignCandidate[] };
+  const parsed = idSchema.safeParse(input);
+  if (!parsed.success)
+    return { ok: false as const, error: "Invalid id", candidates: [] as ReassignCandidate[] };
+  const admin = createAdminClient();
+  if (!(await scopedAppointmentMatch(admin, profile, parsed.data.id)))
+    return { ...UNAUTHORIZED, candidates: [] as ReassignCandidate[] };
+
+  const { data: b } = await admin
+    .from("appointments")
+    .select("branch, appointment_date, time_slot, staff_name")
+    .eq("id", parsed.data.id)
+    .maybeSingle();
+  const bk = b as
+    | { branch: string; appointment_date: string; time_slot: string; staff_name: string }
+    | null;
+  if (!bk)
+    return { ok: false as const, error: "Booking not found", candidates: [] as ReassignCandidate[] };
+
+  // Weekday of the booking date — same UTC-midnight expression as staffWorksSlot.
+  const dow = new Date(`${bk.appointment_date}T00:00:00Z`).getUTCDay(); // 0=Sun..6=Sat
+
+  const { data: staffRows } = await admin
+    .from("staff")
+    .select("id, name")
+    .eq("branch", bk.branch as (typeof BRANCHES_TUPLE)[number]);
+  const roster = (staffRows as { id: string; name: string }[] | null) ?? [];
+  if (!roster.length) return { ok: true as const, candidates: [] as ReassignCandidate[] };
+
+  // Which of them are scheduled for this weekday + slot?
+  const { data: sched } = await admin
+    .from("staff_schedules")
+    .select("staff_id")
+    .eq("day_of_week", dow)
+    .eq("time_slot", bk.time_slot)
+    .in("staff_id", roster.map((s) => s.id));
+  const scheduled = new Set(((sched as { staff_id: string }[] | null) ?? []).map((r) => r.staff_id));
+
+  // Who already holds that exact slot (mirror of the uq_appointment_slot index)?
+  const { data: occ } = await admin
+    .from("appointments")
+    .select("staff_name")
+    .eq("branch", bk.branch as (typeof BRANCHES_TUPLE)[number])
+    .eq("appointment_date", bk.appointment_date)
+    .eq("time_slot", bk.time_slot)
+    .in("payment_status", SLOT_HOLDING_STATUSES as unknown as string[]);
+  const occupied = new Set(
+    ((occ as { staff_name: string }[] | null) ?? []).map((r) => r.staff_name.toLowerCase()),
+  );
+
+  const current = bk.staff_name.toLowerCase();
+  const candidates = roster
+    .filter((s) => scheduled.has(s.id))
+    .filter((s) => !occupied.has(s.name.toLowerCase()))
+    .filter((s) => s.name.toLowerCase() !== current)
+    .map((s) => ({ staffId: s.id, name: s.name }));
+
+  return { ok: true as const, candidates };
+}
+
+const reassignInput = z.object({
+  id: z.string().uuid(),
+  staffName: z.string().trim().min(1).max(50),
+});
+
+/**
+ * Move a booking to another artist by updating staff_name (the exact-name link the
+ * artist dashboards match on, so it propagates to all panels). Canonicalizes to the
+ * branch roster's spelling and catches the unique-slot collision (23505).
+ */
+export async function reassignBookingStaff(input: z.infer<typeof reassignInput>) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = reassignInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid" };
+  const admin = createAdminClient();
+  if (!(await scopedAppointmentMatch(admin, profile, parsed.data.id))) return UNAUTHORIZED;
+
+  const { data: b } = await admin
+    .from("appointments")
+    .select("branch")
+    .eq("id", parsed.data.id)
+    .maybeSingle();
+  const branch = (b as { branch: string } | null)?.branch;
+  if (!branch) return { ok: false as const, error: "Booking not found" };
+
+  // Canonicalize to the exact roster spelling in that branch so the staff-name
+  // match stays exact (mirrors createTeamMember).
+  const { data: rosterRow } = await admin
+    .from("staff")
+    .select("name")
+    .eq("branch", branch as (typeof BRANCHES_TUPLE)[number])
+    .ilike("name", parsed.data.staffName)
+    .maybeSingle();
+  const canonical = (rosterRow as { name: string } | null)?.name;
+  if (!canonical) return { ok: false as const, error: "Pick an artist from this branch's roster." };
+
+  const { error } = await admin
+    .from("appointments")
+    .update({ staff_name: canonical })
+    .eq("id", parsed.data.id);
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      return {
+        ok: false as const,
+        error: "That artist already has a booking in this slot. Pick another artist.",
+      };
+    }
+    return { ok: false as const, error: error.message };
+  }
   return { ok: true as const };
 }
 
@@ -1167,6 +1315,189 @@ export async function setStaffSchedule(input: z.infer<typeof setScheduleInput>) 
     if (insErr) return { ok: false as const, error: insErr.message };
   }
   return { ok: true as const };
+}
+
+// ─────────────────────────── Staff salaries (payroll) ───────────────────────
+/**
+ * One stylist's payroll for a month. Net pay is DERIVED (never stored) so it always
+ * reflects the current salary/rate/absences: net = max(0, base − absent×perDay).
+ */
+export type SalaryView = {
+  staffId: string;
+  month: string; // "YYYY-MM"
+  base_salary: number;
+  per_day_deduction: number;
+  absent_days: number;
+  deduction: number; // absent_days × per_day_deduction
+  net: number; // max(0, base_salary − deduction)
+  exists: boolean; // whether a row is actually saved for this month
+};
+
+type SalaryRow = {
+  staff_id: string;
+  month: string;
+  base_salary: number;
+  per_day_deduction: number;
+  absent_days: number;
+};
+
+const monthSchema = z.string().regex(/^\d{4}-\d{2}$/, "Invalid month");
+
+function salaryView(
+  staffId: string,
+  month: string,
+  row: SalaryRow | null,
+  defaults: { base_salary: number; per_day_deduction: number },
+): SalaryView {
+  const base_salary = row?.base_salary ?? defaults.base_salary;
+  const per_day_deduction = row?.per_day_deduction ?? defaults.per_day_deduction;
+  const absent_days = row?.absent_days ?? 0;
+  const deduction = absent_days * per_day_deduction;
+  return {
+    staffId,
+    month,
+    base_salary,
+    per_day_deduction,
+    absent_days,
+    deduction,
+    net: Math.max(0, base_salary - deduction),
+    exists: !!row,
+  };
+}
+
+/** The saved salary row for staff+month, or null (also null if the table is absent). */
+async function readSalaryRow(admin: Admin, staffId: string, month: string): Promise<SalaryRow | null> {
+  const { data, error } = await admin
+    .from("staff_salaries")
+    .select("staff_id, month, base_salary, per_day_deduction, absent_days")
+    .eq("staff_id", staffId)
+    .eq("month", month)
+    .maybeSingle();
+  if (error) return null; // no row, or migration not applied yet → treat as unset
+  return (data as SalaryRow | null) ?? null;
+}
+
+/** Salary/rate to carry forward when a month has no row yet (latest earlier month). */
+async function latestSalaryDefaults(
+  admin: Admin,
+  staffId: string,
+  beforeMonth: string,
+): Promise<{ base_salary: number; per_day_deduction: number }> {
+  const { data } = await admin
+    .from("staff_salaries")
+    .select("base_salary, per_day_deduction, month")
+    .eq("staff_id", staffId)
+    .lt("month", beforeMonth)
+    .order("month", { ascending: false })
+    .limit(1);
+  const row = ((data as { base_salary: number; per_day_deduction: number }[] | null) ?? [])[0];
+  return { base_salary: row?.base_salary ?? 0, per_day_deduction: row?.per_day_deduction ?? 0 };
+}
+
+/** Admin/manager read a stylist's payroll for a month (carries salary from the
+ *  latest earlier month when this month has no row yet). */
+export async function getStaffSalary(input: { staffId: string; month: string }) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, salary: null };
+  const parsed = z.object({ staffId: z.string().uuid(), month: monthSchema }).safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid", salary: null };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.staffId)))
+    return { ...UNAUTHORIZED, salary: null };
+  const row = await readSalaryRow(admin, parsed.data.staffId, parsed.data.month);
+  const defaults = row
+    ? { base_salary: row.base_salary, per_day_deduction: row.per_day_deduction }
+    : await latestSalaryDefaults(admin, parsed.data.staffId, parsed.data.month);
+  return { ok: true as const, salary: salaryView(parsed.data.staffId, parsed.data.month, row, defaults) };
+}
+
+const setPayInput = z.object({
+  staffId: z.string().uuid(),
+  month: monthSchema,
+  base_salary: z.coerce.number().int("Whole rupees only").min(0).max(10_000_000),
+  per_day_deduction: z.coerce.number().int("Whole rupees only").min(0).max(10_000_000),
+});
+
+/** Admin sets a stylist's base salary + per-absent-day deduction for a month
+ *  (preserving any absent_days already recorded). */
+export async function setStaffSalaryPay(input: z.infer<typeof setPayInput>) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = setPayInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  const existing = await readSalaryRow(admin, parsed.data.staffId, parsed.data.month);
+  const { error } = await admin.from("staff_salaries").upsert(
+    {
+      staff_id: parsed.data.staffId,
+      month: parsed.data.month,
+      base_salary: parsed.data.base_salary,
+      per_day_deduction: parsed.data.per_day_deduction,
+      absent_days: existing?.absent_days ?? 0,
+      updated_by: profile.id,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "staff_id,month" },
+  );
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+const setAbsenceInput = z.object({
+  staffId: z.string().uuid(),
+  month: monthSchema,
+  absent_days: z.coerce.number().int().min(0).max(31),
+});
+
+/** Admin + manager record how many days a stylist was absent that month. Salary and
+ *  rate are preserved (carried from the latest earlier month if the row is new). */
+export async function setStaffAbsentDays(input: z.infer<typeof setAbsenceInput>) {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = setAbsenceInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.staffId))) return UNAUTHORIZED;
+  const existing = await readSalaryRow(admin, parsed.data.staffId, parsed.data.month);
+  const carried = existing
+    ? { base_salary: existing.base_salary, per_day_deduction: existing.per_day_deduction }
+    : await latestSalaryDefaults(admin, parsed.data.staffId, parsed.data.month);
+  const { error } = await admin.from("staff_salaries").upsert(
+    {
+      staff_id: parsed.data.staffId,
+      month: parsed.data.month,
+      base_salary: carried.base_salary,
+      per_day_deduction: carried.per_day_deduction,
+      absent_days: parsed.data.absent_days,
+      updated_by: profile.id,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "staff_id,month" },
+  );
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+/** A stylist reads their own payroll for a month (absent days + net pay). Resolves
+ *  their staff row by roster name (+ branch). Returns null if no roster/record. */
+export async function getMySalary(input: { month: string }) {
+  const profile = await requireRole(["staff", "admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, salary: null as SalaryView | null };
+  const parsed = z.object({ month: monthSchema }).safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid month", salary: null as SalaryView | null };
+  const name = profile.staffName ?? "";
+  if (!name) return { ok: true as const, salary: null as SalaryView | null };
+  const admin = createAdminClient();
+  let q = admin.from("staff").select("id").ilike("name", name);
+  if (profile.branch) q = q.eq("branch", profile.branch as (typeof BRANCHES_TUPLE)[number]);
+  const { data } = await q.limit(1);
+  const staffId = ((data as { id: string }[] | null) ?? [])[0]?.id;
+  if (!staffId) return { ok: true as const, salary: null as SalaryView | null };
+  const row = await readSalaryRow(admin, staffId, parsed.data.month);
+  const defaults = row
+    ? { base_salary: row.base_salary, per_day_deduction: row.per_day_deduction }
+    : await latestSalaryDefaults(admin, staffId, parsed.data.month);
+  return { ok: true as const, salary: salaryView(staffId, parsed.data.month, row, defaults) };
 }
 
 // ─────────────────────────────── Team (auth users) ──────────────────────────

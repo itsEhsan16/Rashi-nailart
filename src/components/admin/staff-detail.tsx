@@ -21,9 +21,11 @@ import { EmptyState } from "@/components/dashboard/empty-state";
 import { StaffAvatar } from "@/components/staff-avatar";
 import { StaffStatsRow } from "@/components/staff/staff-stats";
 import { StaffMonthlyView } from "@/components/staff/staff-monthly-view";
+import { StaffSalarySection } from "@/components/admin/staff-salary-section";
 import { computeStaffStats } from "@/components/staff/staff-metrics";
 import { formatLocalDate, slotStartLabel, slotStartMinutes } from "@/lib/utils";
 import { paymentModeLabel } from "@/lib/salon-data";
+import type { UserRole } from "@/lib/auth";
 import {
   getStaffDetail,
   uploadStaffPhoto,
@@ -42,11 +44,13 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
  */
 export function StaffDetail({
   staff,
+  role,
   canEdit,
   onBack,
   onPhotoChanged,
 }: {
   staff: StaffRow;
+  role: UserRole;
   canEdit: boolean;
   onBack: () => void;
   onPhotoChanged: () => void;
@@ -192,6 +196,16 @@ export function StaffDetail({
           <section className="space-y-3">
             <h3 className="text-sm font-semibold">Monthly sales &amp; commission</h3>
             <StaffMonthlyView rows={bookings} currentMonth={currentMonth} />
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold">Salary</h3>
+            <StaffSalarySection
+              staffId={staff.id}
+              currentMonth={currentMonth}
+              canEditPay={role === "admin"}
+              canEditAbsence={role === "admin" || role === "manager"}
+            />
           </section>
 
           <section className="space-y-3">

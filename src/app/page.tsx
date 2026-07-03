@@ -28,7 +28,7 @@ import { Faq } from "@/components/landing/faq";
 import { NailCard } from "@/components/landing/nail-card";
 import { HeroCollage } from "@/components/landing/hero-collage";
 import { getCatalog } from "@/lib/catalog";
-import { MEMBERSHIP_PRICE, BOOKING_FEE } from "@/lib/salon-data";
+import { MEMBERSHIP_PRICE, BOOKING_FEE, PENDING_HOLD_MINUTES } from "@/lib/salon-data";
 
 function getNailCategories() {
   const dir = path.join(process.cwd(), "public", "nail-categories");
@@ -63,7 +63,7 @@ const HOW_IT_WORKS = [
   {
     icon: CreditCard,
     title: `Pay ₹${BOOKING_FEE} to lock it in`,
-    text: `A small UPI fee holds your slot for 5 minutes — just upload the screenshot to confirm.`,
+    text: `A small booking fee holds your slot for ${PENDING_HOLD_MINUTES} minutes — pay securely online to confirm.`,
   },
   {
     icon: Sparkles,
@@ -343,7 +343,7 @@ export default async function HomePage() {
               <ul className="mt-6 space-y-3 text-sm">
                 {[
                   "Live availability — no double bookings",
-                  `Slot held for 5 minutes while you pay`,
+                  `Slot held for ${PENDING_HOLD_MINUTES} minutes while you pay`,
                   "Members save 50% on nail art automatically",
                 ].map((line) => (
                   <li key={line} className="flex items-start gap-2.5">
@@ -382,9 +382,24 @@ export default async function HomePage() {
         <div className="mx-auto max-w-6xl px-6 py-10">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
             <Logo className="h-9 w-auto" />
-            <div className="flex items-center gap-4 text-muted-foreground">
-              <a href="#" aria-label="Instagram" className="transition-colors hover:text-primary">
-                <Instagram className="h-5 w-5" />
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
+              <a
+                href="https://www.instagram.com/rashinailartstudio_vileparle"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram — Vile Parle"
+                className="inline-flex items-center gap-1.5 text-sm transition-colors hover:text-primary"
+              >
+                <Instagram className="h-5 w-5" /> Vile Parle
+              </a>
+              <a
+                href="https://www.instagram.com/rashinailartstudio_bandra"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram — Bandra"
+                className="inline-flex items-center gap-1.5 text-sm transition-colors hover:text-primary"
+              >
+                <Instagram className="h-5 w-5" /> Bandra
               </a>
               <a href="#" aria-label="Facebook" className="transition-colors hover:text-primary">
                 <Facebook className="h-5 w-5" />

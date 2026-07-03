@@ -101,9 +101,9 @@ export function PaySecureScreen({ amount, forLabel, holdExpiresAt, summaryLine, 
             )}
             {expired ? (
               <>
-                Your <span className="font-semibold">5-minute hold has ended</span>. You can still
-                try to pay — if the slot was taken meanwhile we&apos;ll let you know. Otherwise,
-                please book again.
+                Your <span className="font-semibold">hold has ended</span>. You can still try to pay
+                — if the slot was taken meanwhile we&apos;ll let you know. Otherwise, please book
+                again.
               </>
             ) : (
               <>

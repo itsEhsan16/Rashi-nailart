@@ -73,8 +73,14 @@ export function isAcceptedProofFile(file: { type: string; name: string }): boole
 }
 
 /** Abandoned pending_payment holds older than this are reclaimable. The customer
- *  has this long to pay over UPI and upload their screenshot before the slot frees. */
-export const PENDING_HOLD_MINUTES = 5;
+ *  has this long to pay the booking fee online before the slot frees. */
+export const PENDING_HOLD_MINUTES = 2.5;
+
+/** A manager may cancel a booking only more than this many hours before its start.
+ *  Admin is exempt. Enforced in cancelBooking + reflected in the bookings panel, and
+ *  surfaced to customers (FAQ + confirmation screen) as the cancellation window. */
+export const CANCELLATION_CUTOFF_HOURS = 6;
+export const CANCELLATION_CUTOFF_MS = CANCELLATION_CUTOFF_HOURS * 60 * 60 * 1000;
 
 /**
  * How staff/manager/admin record that the in-store balance (service + extras)
