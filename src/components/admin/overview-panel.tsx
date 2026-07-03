@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
 import {
   Area,
   AreaChart,
@@ -12,49 +13,103 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { IndianRupee, CalendarCheck, Crown, TrendingUp, CheckCircle2, Hourglass, PieChart } from "lucide-react";
+import { IndianRupee, CalendarCheck, Crown, CheckCircle2, Hourglass, PieChart } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { SectionHeader } from "@/components/dashboard/page-header";
+import { recentMonths } from "@/lib/utils";
 import { getAdminOverview, type Overview } from "@/lib/actions/admin";
 import { RevenueBreakdownDialog } from "./revenue-breakdown-dialog";
 import { StaffEarningsTable } from "./staff-earnings-table";
 
+const monthLabel = (m: string) => format(new Date(`${m}-01T00:00:00`), "MMMM yyyy");
+
 export function OverviewPanel() {
+  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const months = useMemo(() => recentMonths(currentMonth, 12), [currentMonth]);
+  const [month, setMonth] = useState(currentMonth);
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
-  useEffect(() => {
-    getAdminOverview()
+  const load = useCallback(() => {
+    setLoading(true);
+    getAdminOverview({ month })
       .then((res) => {
         if (res.ok && res.overview) setData(res.overview);
         else if (!res.ok) toast.error(res.error);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [month]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+
+  const monthPicker = (
+    <Select value={month} onValueChange={setMonth}>
+      <SelectTrigger className="w-44">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {months.map((m) => (
+          <SelectItem key={m} value={m}>
+            {monthLabel(m)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 
   if (loading) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 rounded-xl" />
-        ))}
-        <Skeleton className="h-72 rounded-xl sm:col-span-2 lg:col-span-4" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <SectionHeader title="Overview" description={monthLabel(month)} />
+          {monthPicker}
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 rounded-xl" />
+          ))}
+          <Skeleton className="h-72 rounded-xl sm:col-span-2 lg:col-span-4" />
+        </div>
       </div>
     );
   }
 
-  if (!data) return <p className="text-muted-foreground">No data available.</p>;
-
-  const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <SectionHeader title="Overview" description={monthLabel(month)} />
+          {monthPicker}
+        </div>
+        <p className="text-muted-foreground">No data available.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SectionHeader title="Overview" description={`Figures for ${monthLabel(data.month)}`} />
+        {monthPicker}
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total revenue"
@@ -63,9 +118,13 @@ export function OverviewPanel() {
           accent="primary"
           hint={`${inr(data.breakdown.serviceCharges + data.breakdown.extras)} services+extras · ${inr(data.feeRevenue)} fees · ${inr(data.membershipRevenue)} members`}
         />
-        <StatCard label="Bookings today" value={String(data.bookingsToday)} icon={<CalendarCheck className="h-5 w-5" />} accent="primary" hint="confirmed appointments" />
-        <StatCard label="This week" value={String(data.bookingsWeek)} icon={<TrendingUp className="h-5 w-5" />} accent="primary" hint={`${data.bookingsMonth} this month`} />
-        <StatCard label="Active members" value={String(data.activeMembers)} icon={<Crown className="h-5 w-5" />} accent="primary" />
+        <StatCard
+          label="Bookings"
+          value={String(data.bookingsMonth)}
+          icon={<CalendarCheck className="h-5 w-5" />}
+          accent="primary"
+          hint={`confirmed in ${monthLabel(data.month)}`}
+        />
         <StatCard
           label="Completed sessions"
           value={String(data.completedSessions)}
@@ -79,6 +138,13 @@ export function OverviewPanel() {
           icon={<Hourglass className="h-5 w-5" />}
           accent="amber"
           hint="confirmed, not yet completed"
+        />
+        <StatCard
+          label="New members"
+          value={String(data.newMembers)}
+          icon={<Crown className="h-5 w-5" />}
+          accent="primary"
+          hint={`${data.activeMembers} active total`}
         />
       </div>
 
@@ -94,7 +160,7 @@ export function OverviewPanel() {
       </Card>
 
       <Card className="p-5">
-        <SectionHeader title="Revenue · last 14 days" className="mb-4" />
+        <SectionHeader title={`Revenue by day · ${monthLabel(data.month)}`} className="mb-4" />
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data.revenueByDay} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
