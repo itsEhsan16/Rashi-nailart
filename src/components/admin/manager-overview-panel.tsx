@@ -1,39 +1,76 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { format } from "date-fns";
 import { IndianRupee, PieChart, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { SectionHeader } from "@/components/dashboard/page-header";
+import { recentMonths } from "@/lib/utils";
 import { getManagerOverview, type ManagerOverview } from "@/lib/actions/admin";
 import { RevenueBreakdownDialog } from "./revenue-breakdown-dialog";
 import { StaffEarningsTable } from "./staff-earnings-table";
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
+const monthLabel = (m: string) => format(new Date(`${m}-01T00:00:00`), "MMMM yyyy");
 
-/** Manager dashboard landing: branch revenue + per-artist earnings, all scoped
- *  to the manager's own branch. Memberships are salon-wide and excluded. */
+/** Manager dashboard landing: branch revenue + per-artist earnings for a month,
+ *  scoped to the manager's own branch. Memberships are salon-wide and excluded. */
 export function ManagerOverviewPanel() {
+  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const months = useMemo(() => recentMonths(currentMonth, 12), [currentMonth]);
+  const [month, setMonth] = useState(currentMonth);
   const [data, setData] = useState<ManagerOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
-  useEffect(() => {
-    getManagerOverview()
+  const load = useCallback(() => {
+    setLoading(true);
+    getManagerOverview({ month })
       .then((res) => {
         if (res.ok && res.overview) setData(res.overview);
         else if (!res.ok) toast.error(res.error);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [month]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const monthPicker = (
+    <Select value={month} onValueChange={setMonth}>
+      <SelectTrigger className="w-44">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {months.map((m) => (
+          <SelectItem key={m} value={m}>
+            {monthLabel(m)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 
   if (loading) {
     return (
       <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <SectionHeader title="Overview" description={monthLabel(month)} />
+          {monthPicker}
+        </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-20 rounded-xl" />
@@ -44,13 +81,28 @@ export function ManagerOverviewPanel() {
     );
   }
 
-  if (!data) return <p className="text-muted-foreground">No data available.</p>;
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <SectionHeader title="Overview" description={monthLabel(month)} />
+          {monthPicker}
+        </div>
+        <p className="text-muted-foreground">No data available.</p>
+      </div>
+    );
+  }
 
   const inStore = data.breakdown.serviceCharges + data.breakdown.extras;
   const sessions = data.staffStats.reduce((s, r) => s + r.completed, 0);
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <SectionHeader title="Overview" description={`${data.branch} · ${monthLabel(data.month)}`} />
+        {monthPicker}
+      </div>
+
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label={`Branch revenue · ${data.branch}`}

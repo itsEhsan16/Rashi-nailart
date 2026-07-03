@@ -18,7 +18,7 @@ import {
   CANCELLATION_CUTOFF_HOURS,
   type PaymentMode,
 } from "@/lib/salon-data";
-import { appointmentStartMs } from "@/lib/utils";
+import { appointmentStartMs, monthBounds, daysInMonth } from "@/lib/utils";
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { UPI_VPA_RE } from "@/lib/upi";
 import { isMissingStaffPhotoColumn } from "@/lib/staff-photos";
@@ -670,114 +670,115 @@ function aggregateRevenue(
 }
 
 export type Overview = {
+  month: string; // "YYYY-MM" this overview is scoped to
   totalRevenue: number;
   feeRevenue: number;
   membershipRevenue: number;
-  bookingsToday: number;
-  bookingsWeek: number;
-  bookingsMonth: number;
-  activeMembers: number;
-  completedSessions: number;
-  pendingSessions: number;
-  revenueByDay: { date: string; fees: number; memberships: number }[];
+  bookingsMonth: number; // verified appts with appointment_date in the month
+  completedSessions: number; // of those, completed
+  pendingSessions: number; // of those, verified but not yet completed
+  newMembers: number; // membership payments received in the month
+  activeMembers: number; // live count of currently-active memberships (not month-scoped)
+  revenueByDay: { date: string; fees: number; memberships: number }[]; // days of the month
   bookingsByBranch: { branch: string; count: number }[];
   breakdown: RevenueBreakdown;
   staffStats: StaffEarning[];
 };
 
-/** Manager dashboard: branch-scoped revenue + per-artist rollup (no memberships,
- *  which are salon-wide, and none of the admin-only counts). */
+/** Manager dashboard: branch-scoped revenue + per-artist rollup for one month (no
+ *  memberships, which are salon-wide, and none of the admin-only counts). */
 export type ManagerOverview = {
+  month: string; // "YYYY-MM" this overview is scoped to
   branch: string;
   totalRevenue: number;
   breakdown: RevenueBreakdown;
   staffStats: StaffEarning[];
 };
 
-export async function getManagerOverview() {
+/** Resolve a requested "YYYY-MM" to a valid month, defaulting to the current one. */
+function resolveMonth(month: string | undefined): string {
+  if (month && /^\d{4}-\d{2}$/.test(month)) return month;
+  return new Date().toISOString().slice(0, 7);
+}
+
+export async function getManagerOverview(input?: { month?: string }) {
   const profile = await requireRole(["manager"]);
   if (!profile) return { ...UNAUTHORIZED, overview: null };
   if (!profile.branch) return { ok: false as const, error: "No branch assigned", overview: null };
   const admin = createAdminClient();
+  const month = resolveMonth(input?.month);
+  const { start, end } = monthBounds(month);
+  // Scope to appointments whose appointment_date falls in the month (same month
+  // basis as the staff monthly earnings/commission, so the numbers reconcile).
   const { data, error } = await admin
     .from("appointments")
     .select("id, branch, amount, price, staff_name, completed, payment_mode")
     .eq("payment_status", "verified")
-    .eq("branch", profile.branch);
+    .eq("branch", profile.branch)
+    .gte("appointment_date", start)
+    .lt("appointment_date", end);
   if (error) return { ok: false as const, error: error.message, overview: null };
   const verified = (data as VerifiedAppt[] | null) ?? [];
   const completedIds = verified.filter((a) => a.completed).map((a) => a.id);
   const extrasByAppt = await extrasTotalsFor(admin, completedIds);
   const { breakdown, staffStats, totalRevenue } = aggregateRevenue(verified, extrasByAppt, 0);
-  const overview: ManagerOverview = { branch: profile.branch, totalRevenue, breakdown, staffStats };
+  const overview: ManagerOverview = { month, branch: profile.branch, totalRevenue, breakdown, staffStats };
   return { ok: true as const, overview };
 }
 
-export async function getAdminOverview() {
+export async function getAdminOverview(input?: { month?: string }) {
   const profile = await requireRole(["admin"]);
   if (!profile) return { ...UNAUTHORIZED, overview: null };
   const admin = createAdminClient();
 
-  const [memberPayRes, apptRes, memRes, completedRes, pendingSessRes] = await Promise.all([
-    // membership revenue: verified membership payments only
+  const nowMonth = new Date().toISOString().slice(0, 7);
+  const month = resolveMonth(input?.month);
+  const { start, end } = monthBounds(month);
+
+  const [memberPayRes, apptRes, memRes] = await Promise.all([
+    // membership revenue: verified membership payments received in the month
     admin
       .from("payments")
       .select("amount, created_at")
       .eq("purpose", "membership")
-      .eq("status", "verified"),
-    // confirmed bookings: verified only (fees from all; service+extras from completed)
+      .eq("status", "verified")
+      .gte("created_at", start)
+      .lt("created_at", end),
+    // confirmed bookings whose appointment falls in the month (fees from all
+    // verified; service+extras only once completed)
     admin
       .from("appointments")
-      .select(
-        "id, appointment_date, branch, amount, price, staff_name, completed, payment_mode, verified_at",
-      )
-      .eq("payment_status", "verified"),
-    admin.from("memberships").select("id").eq("active", true),
-    // sessions: completed vs confirmed-but-not-yet-completed
-    admin.from("appointments").select("id", { count: "exact", head: true }).eq("completed", true),
-    admin
-      .from("appointments")
-      .select("id", { count: "exact", head: true })
+      .select("id, appointment_date, branch, amount, price, staff_name, completed, payment_mode")
       .eq("payment_status", "verified")
-      .eq("completed", false),
+      .gte("appointment_date", start)
+      .lt("appointment_date", end),
+    // active members is a live roster count, not month-scoped
+    admin.from("memberships").select("id").eq("active", true),
   ]);
 
   const memberPays = (memberPayRes.data as { amount: number; created_at: string }[] | null) ?? [];
   const appts =
-    (apptRes.data as
-      | (VerifiedAppt & { appointment_date: string; verified_at: string | null })[]
-      | null) ?? [];
+    (apptRes.data as (VerifiedAppt & { appointment_date: string })[] | null) ?? [];
   const members = (memRes.data as { id: string }[] | null) ?? [];
-  const completedSessions = completedRes.count ?? 0;
-  const pendingSessions = pendingSessRes.count ?? 0;
 
   const feeRevenue = appts.reduce((s, a) => s + (a.amount ?? 0), 0);
   const membershipRevenue = memberPays.reduce((s, p) => s + p.amount, 0);
+  const bookingsMonth = appts.length;
+  const completedSessions = appts.filter((a) => a.completed).length;
+  const pendingSessions = appts.filter((a) => !a.completed).length;
 
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const weekAgo = new Date(today);
-  weekAgo.setDate(weekAgo.getDate() - 7);
-  const monthStr = todayStr.slice(0, 7);
-
-  const bookingsToday = appts.filter((a) => a.appointment_date === todayStr).length;
-  const bookingsWeek = appts.filter((a) => a.appointment_date >= weekAgo.toISOString().slice(0, 10)).length;
-  const bookingsMonth = appts.filter((a) => a.appointment_date.slice(0, 7) === monthStr).length;
-
-  // revenue by day for the last 14 days
-  const days: string[] = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    days.push(d.toISOString().slice(0, 10));
-  }
-  const revenueByDay = days.map((date) => ({
+  // Daily revenue across the month (fees by appointment date, memberships by
+  // payment date). For the current month, stop at today so future days aren't empty.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const allDays = daysInMonth(month);
+  const chartDays = month === nowMonth ? allDays.filter((d) => d <= todayStr) : allDays;
+  const revenueByDay = chartDays.map((date) => ({
     date: date.slice(5),
     fees: appts
-      .filter((a) => (a.verified_at ?? "").slice(0, 10) === date)
+      .filter((a) => a.appointment_date === date)
       .reduce((s, a) => s + (a.amount ?? 0), 0),
     memberships: memberPays
-      .filter((p) => p.created_at.slice(0, 10) === date)
+      .filter((p) => (p.created_at ?? "").slice(0, 10) === date)
       .reduce((s, p) => s + p.amount, 0),
   }));
 
@@ -795,15 +796,15 @@ export async function getAdminOverview() {
   );
 
   const overview: Overview = {
+    month,
     totalRevenue,
     feeRevenue,
     membershipRevenue,
-    bookingsToday,
-    bookingsWeek,
     bookingsMonth,
-    activeMembers: members.length,
     completedSessions,
     pendingSessions,
+    newMembers: memberPays.length,
+    activeMembers: members.length,
     revenueByDay,
     bookingsByBranch,
     breakdown,

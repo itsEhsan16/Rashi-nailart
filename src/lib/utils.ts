@@ -95,6 +95,26 @@ export function recentMonths(current: string, count: number): string[] {
   return out;
 }
 
+/**
+ * Half-open date range for a "YYYY-MM" month: [start, end) as "YYYY-MM-DD".
+ *   monthBounds("2026-07") -> { start: "2026-07-01", end: "2026-08-01" }
+ * Use with `.gte(start).lt(end)` so month scoping never double-counts a boundary day.
+ */
+export function monthBounds(month: string): { start: string; end: string } {
+  const [y, m] = month.split("-").map(Number);
+  const start = `${month}-01`;
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return { start, end: `${ny}-${String(nm).padStart(2, "0")}-01` };
+}
+
+/** Every calendar day of a "YYYY-MM" month as "YYYY-MM-DD", in order. */
+export function daysInMonth(month: string): string[] {
+  const [y, m] = month.split("-").map(Number);
+  const count = new Date(y, m, 0).getDate(); // day 0 of next month = last day of this one
+  return Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
+}
+
 /** Local "YYYY-MM-DD" (NOT UTC) — matches appointment_date which is a calendar date. */
 export function formatLocalDate(d: Date): string {
   const y = d.getFullYear();
