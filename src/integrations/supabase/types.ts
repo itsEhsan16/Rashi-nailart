@@ -58,6 +58,7 @@ export type Database = {
           discount_applied: number
           id: string
           is_member: boolean
+          original_staff_name: string | null
           paid_at: string | null
           payment_method: string | null
           payment_mode: string | null
@@ -87,6 +88,7 @@ export type Database = {
           discount_applied?: number
           id?: string
           is_member?: boolean
+          original_staff_name?: string | null
           paid_at?: string | null
           payment_method?: string | null
           payment_mode?: string | null
@@ -116,6 +118,7 @@ export type Database = {
           discount_applied?: number
           id?: string
           is_member?: boolean
+          original_staff_name?: string | null
           paid_at?: string | null
           payment_method?: string | null
           payment_mode?: string | null

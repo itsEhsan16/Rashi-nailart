@@ -58,10 +58,15 @@ export type BookingRow = {
   payment_mode: PaymentMode | "upi" | null;
   /** Sum of staff-added extra line items (₹). Computed, not an appointments column. */
   extras_total: number;
+  /** Artist the customer originally booked, if a manager reassigned them. null = never reassigned. */
+  original_staff_name: string | null;
+  /** Staff view only: true when this booking was reassigned AWAY from the viewer to
+   *  another artist (so their dashboard shows it read-only, not counted in earnings). */
+  reassigned_away: boolean;
 };
 
 const BOOKING_COLUMNS =
-  "id, client_name, phone, branch, appointment_date, time_slot, service, price, amount, staff_name, special_requests, payment_status, uploaded_at, verified_at, rejection_reason, is_member, discount_applied, completed, created_at, payment_mode";
+  "id, client_name, phone, branch, appointment_date, time_slot, service, price, amount, staff_name, special_requests, payment_status, uploaded_at, verified_at, rejection_reason, is_member, discount_applied, completed, created_at, payment_mode, original_staff_name";
 
 const filtersSchema = z.object({
   date: z.string().optional(),
@@ -89,7 +94,10 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
     .order("time_slot", { ascending: true });
 
   if (profile.role === "staff") {
-    q = q.ilike("staff_name", profile.staffName ?? "__none__");
+    // Own current bookings PLUS ones reassigned away to another artist (so the
+    // originally-booked stylist still sees where their customer went).
+    const name = profile.staffName ?? "__none__";
+    q = q.or(`staff_name.ilike.${name},original_staff_name.ilike.${name}`);
   } else if (profile.role === "manager" && profile.branch) {
     q = q.eq("branch", profile.branch);
   } else if (f.branch) {
@@ -104,10 +112,9 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
 
   const { data, error } = await q;
   if (error) return { ok: false as const, error: error.message, bookings: [] as BookingRow[] };
-  let bookings = ((data as Omit<BookingRow, "extras_total">[] | null) ?? []).map((b) => ({
-    ...b,
-    extras_total: 0,
-  })) as BookingRow[];
+  let bookings = ((data as Omit<BookingRow, "extras_total" | "reassigned_away">[] | null) ?? []).map(
+    (b) => ({ ...b, extras_total: 0, reassigned_away: false }),
+  ) as BookingRow[];
 
   // Attach each booking's extras total in one batched query (avoids N+1).
   if (bookings.length) {
@@ -115,9 +122,15 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
     bookings = bookings.map((b) => ({ ...b, extras_total: totals.get(b.id) ?? 0 }));
   }
 
-  // Staff must not see client phone numbers; redact before sending to the client.
+  // Staff view: redact client phone, and flag bookings reassigned away from them
+  // (staff_name is now someone else, so it was reassigned to another artist).
   if (profile.role === "staff") {
-    bookings = bookings.map((b) => ({ ...b, phone: "" }));
+    const me = (profile.staffName ?? "").toLowerCase();
+    bookings = bookings.map((b) => ({
+      ...b,
+      phone: "",
+      reassigned_away: b.staff_name.toLowerCase() !== me,
+    }));
   }
   return { ok: true as const, bookings, role: profile.role };
 }
@@ -327,26 +340,37 @@ export async function reassignBookingStaff(input: z.infer<typeof reassignInput>)
 
   const { data: b } = await admin
     .from("appointments")
-    .select("branch")
+    .select("branch, staff_name, original_staff_name")
     .eq("id", parsed.data.id)
     .maybeSingle();
-  const branch = (b as { branch: string } | null)?.branch;
-  if (!branch) return { ok: false as const, error: "Booking not found" };
+  const bk = b as
+    | { branch: string; staff_name: string; original_staff_name: string | null }
+    | null;
+  if (!bk) return { ok: false as const, error: "Booking not found" };
 
   // Canonicalize to the exact roster spelling in that branch so the staff-name
   // match stays exact (mirrors createTeamMember).
   const { data: rosterRow } = await admin
     .from("staff")
     .select("name")
-    .eq("branch", branch as (typeof BRANCHES_TUPLE)[number])
+    .eq("branch", bk.branch as (typeof BRANCHES_TUPLE)[number])
     .ilike("name", parsed.data.staffName)
     .maybeSingle();
   const canonical = (rosterRow as { name: string } | null)?.name;
   if (!canonical) return { ok: false as const, error: "Pick an artist from this branch's roster." };
+  if (canonical.toLowerCase() === bk.staff_name.toLowerCase()) {
+    return { ok: false as const, error: "That artist is already assigned to this booking." };
+  }
+
+  // Preserve who the customer FIRST booked. Reassigning back to the original clears
+  // the marker (no longer a reassignment).
+  const trueOriginal = bk.original_staff_name ?? bk.staff_name;
+  const original_staff_name =
+    canonical.toLowerCase() === trueOriginal.toLowerCase() ? null : trueOriginal;
 
   const { error } = await admin
     .from("appointments")
-    .update({ staff_name: canonical })
+    .update({ staff_name: canonical, original_staff_name })
     .eq("id", parsed.data.id);
   if (error) {
     if ((error as { code?: string }).code === "23505") {
@@ -679,7 +703,8 @@ export type Overview = {
   pendingSessions: number; // of those, verified but not yet completed
   newMembers: number; // membership payments received in the month
   activeMembers: number; // live count of currently-active memberships (not month-scoped)
-  revenueByDay: { date: string; fees: number; memberships: number }[]; // days of the month
+  // whole revenue split per day: booking fees + in-store services&extras + memberships
+  revenueByDay: { date: string; fees: number; services: number; memberships: number }[];
   bookingsByBranch: { branch: string; count: number }[];
   breakdown: RevenueBreakdown;
   staffStats: StaffEarning[];
@@ -767,28 +792,35 @@ export async function getAdminOverview(input?: { month?: string }) {
   const completedSessions = appts.filter((a) => a.completed).length;
   const pendingSessions = appts.filter((a) => !a.completed).length;
 
-  // Daily revenue across the month (fees by appointment date, memberships by
-  // payment date). For the current month, stop at today so future days aren't empty.
+  // Per-booking extras (service + extras realise only once the booking is completed).
+  const completedIds = appts.filter((a) => a.completed).map((a) => a.id);
+  const extrasByAppt = await extrasTotalsFor(admin, completedIds);
+
+  // Whole daily revenue: booking fees (all verified, by appointment date) + in-store
+  // service&extras (completed, by appointment date) + memberships (by payment date).
+  // For the current month, stop at today so future days aren't empty.
   const todayStr = new Date().toISOString().slice(0, 10);
   const allDays = daysInMonth(month);
   const chartDays = month === nowMonth ? allDays.filter((d) => d <= todayStr) : allDays;
-  const revenueByDay = chartDays.map((date) => ({
-    date: date.slice(5),
-    fees: appts
-      .filter((a) => a.appointment_date === date)
-      .reduce((s, a) => s + (a.amount ?? 0), 0),
-    memberships: memberPays
-      .filter((p) => (p.created_at ?? "").slice(0, 10) === date)
-      .reduce((s, p) => s + p.amount, 0),
-  }));
+  const revenueByDay = chartDays.map((date) => {
+    const onDay = appts.filter((a) => a.appointment_date === date);
+    return {
+      date: date.slice(5),
+      fees: onDay.reduce((s, a) => s + (a.amount ?? 0), 0),
+      services: onDay
+        .filter((a) => a.completed)
+        .reduce((s, a) => s + (a.price ?? 0) + (extrasByAppt.get(a.id) ?? 0), 0),
+      memberships: memberPays
+        .filter((p) => (p.created_at ?? "").slice(0, 10) === date)
+        .reduce((s, p) => s + p.amount, 0),
+    };
+  });
 
   const branchCounts = new Map<string, number>();
   for (const a of appts) branchCounts.set(a.branch, (branchCounts.get(a.branch) ?? 0) + 1);
   const bookingsByBranch = [...branchCounts.entries()].map(([branch, count]) => ({ branch, count }));
 
   // Full revenue (fees + service + extras + memberships) and per-artist rollup.
-  const completedIds = appts.filter((a) => a.completed).map((a) => a.id);
-  const extrasByAppt = await extrasTotalsFor(admin, completedIds);
   const { breakdown, staffStats, totalRevenue } = aggregateRevenue(
     appts,
     extrasByAppt,

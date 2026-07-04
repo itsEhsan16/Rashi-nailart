@@ -1,34 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { format } from "date-fns";
+import { useCallback, useEffect, useState } from "react";
 import { CalendarOff, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 import { Card } from "@/components/ui/card";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { EmptyState } from "@/components/dashboard/empty-state";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { recentMonths } from "@/lib/utils";
 import { getMySalary, type SalaryView } from "@/lib/actions/admin";
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
-const monthLabel = (m: string) => format(new Date(`${m}-01T00:00:00`), "MMMM yyyy");
 
 /**
  * The stylist's own read-only payroll for a month: days absent and the net pay
- * they'll receive (salary − absences × per-day deduction). A month picker lists
- * recent months. Figures come from the same rows the admin edits, so they reconcile.
+ * they'll receive (salary − absences × per-day deduction). The month is driven by
+ * the dashboard's shared picker. Figures come from the same rows the admin edits.
  */
-export function StaffSalaryCard({ currentMonth }: { currentMonth: string }) {
-  const months = useMemo(() => recentMonths(currentMonth, 12), [currentMonth]);
-  const [month, setMonth] = useState(currentMonth);
+export function StaffSalaryCard({ month }: { month: string }) {
   const [loading, setLoading] = useState(true);
   const [salary, setSalary] = useState<SalaryView | null>(null);
 
@@ -53,22 +41,6 @@ export function StaffSalaryCard({ currentMonth }: { currentMonth: string }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">Your salary for the selected month</p>
-        <Select value={month} onValueChange={setMonth}>
-          <SelectTrigger className="w-44">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {months.map((m) => (
-              <SelectItem key={m} value={m}>
-                {monthLabel(m)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       {loading ? (
         <Card className="rounded-xl p-6 shadow-soft">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
