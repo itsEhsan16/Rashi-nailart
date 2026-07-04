@@ -84,6 +84,20 @@ function ServiceSummary({ r }: { r: BookingRow }) {
   );
 }
 
+/** Current artist, with a note when a manager reassigned the booking from another. */
+function StaffCell({ r }: { r: BookingRow }) {
+  return (
+    <>
+      {r.staff_name}
+      {r.original_staff_name && (
+        <span className="mt-0.5 block text-[11px] text-amber-600">
+          reassigned from {r.original_staff_name}
+        </span>
+      )}
+    </>
+  );
+}
+
 export function BookingsPanel({ role }: { role: UserRole }) {
   const canFilter = role !== "staff";
   const canManage = role !== "staff";
@@ -162,6 +176,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
         extras: r.extras_total,
         total: r.price + r.extras_total,
         staff: r.staff_name,
+        reassigned_from: r.original_staff_name ?? "",
         member: r.is_member ? "yes" : "no",
         status: r.completed ? "completed" : r.payment_status,
         notes: r.special_requests ?? "",
@@ -400,7 +415,9 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{r.branch}</Badge>
-                    <div className="mt-1 text-xs text-muted-foreground">{r.staff_name}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      <StaffCell r={r} />
+                    </div>
                   </TableCell>
                   <TableCell>
                     <ServiceSummary r={r} />
@@ -477,7 +494,9 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                 {format(new Date(r.appointment_date), "dd MMM")} · {r.time_slot}
               </div>
               <div className="text-muted-foreground">Artist</div>
-              <div className="text-right">{r.staff_name}</div>
+              <div className="text-right">
+                <StaffCell r={r} />
+              </div>
             </div>
 
             <div className="mt-3 border-t border-border/60 pt-3">

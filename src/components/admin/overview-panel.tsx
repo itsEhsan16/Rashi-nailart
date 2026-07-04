@@ -166,12 +166,16 @@ export function OverviewPanel() {
             <AreaChart data={data.revenueByDay} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
               <defs>
                 <linearGradient id="fees" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="var(--primary)" stopOpacity={0.05} />
+                </linearGradient>
+                <linearGradient id="svc" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="var(--chart-3)" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="var(--chart-3)" stopOpacity={0.05} />
                 </linearGradient>
                 <linearGradient id="mem" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="var(--chart-2)" stopOpacity={0.5} />
+                  <stop offset="95%" stopColor="var(--chart-2)" stopOpacity={0.05} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -184,9 +188,12 @@ export function OverviewPanel() {
                   borderRadius: 8,
                   fontSize: 12,
                 }}
+                formatter={(value) => inr(Number(value))}
               />
-              <Area type="monotone" dataKey="fees" name="Booking fees" stroke="var(--primary)" fill="url(#fees)" />
-              <Area type="monotone" dataKey="memberships" name="Memberships" stroke="var(--chart-2)" fill="url(#mem)" />
+              {/* Stacked so the top edge = whole revenue for the day. */}
+              <Area type="monotone" dataKey="services" name="Services + extras" stackId="rev" stroke="var(--chart-3)" fill="url(#svc)" />
+              <Area type="monotone" dataKey="fees" name="Booking fees" stackId="rev" stroke="var(--primary)" fill="url(#fees)" />
+              <Area type="monotone" dataKey="memberships" name="Memberships" stackId="rev" stroke="var(--chart-2)" fill="url(#mem)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
