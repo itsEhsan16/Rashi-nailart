@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { RefreshCw, Sparkles, CheckCircle2, IndianRupee, Wallet } from "lucide-react";
 import { toast } from "sonner";
@@ -37,9 +37,21 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [extrasFor, setExtrasFor] = useState<BookingRow | null>(null);
 
-  const currentMonth = useMemo(() => formatLocalDate(new Date()).slice(0, 7), []);
+  // Derived from the ticking `now` (not just mount time) so a dashboard left open
+  // across a month boundary rolls over to the new month on its own.
+  const currentMonth = useMemo(() => formatLocalDate(new Date(now)).slice(0, 7), [now]);
   const months = useMemo(() => recentMonths(currentMonth, 12), [currentMonth]);
   const [month, setMonth] = useState(currentMonth);
+  const monthTouched = useRef(false);
+
+  useEffect(() => {
+    if (!monthTouched.current) setMonth(currentMonth);
+  }, [currentMonth]);
+
+  function onMonthChange(m: string) {
+    monthTouched.current = true;
+    setMonth(m);
+  }
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -105,7 +117,7 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
         subtitle="Your tasks and earnings at a glance"
         actions={
           <div className="flex items-center gap-2">
-            <Select value={month} onValueChange={setMonth}>
+            <Select value={month} onValueChange={onMonthChange}>
               <SelectTrigger className="w-40">
                 <SelectValue />
               </SelectTrigger>
