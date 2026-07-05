@@ -223,11 +223,6 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     () => services.find((s) => s.name === serviceName),
     [services, serviceName],
   );
-  const memberPrice =
-    selectedService && isMember && selectedService.isNailArt
-      ? Math.round(selectedService.price * 0.5)
-      : null;
-
   const slotsReady = Boolean(branch && staffName && apptDate);
   const noStylistsForDate = Boolean(branch && apptDate && filteredStaff.length === 0);
 
@@ -338,8 +333,8 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           <div className="mb-6 flex items-center gap-2 rounded-lg bg-primary/10 border border-primary/30 px-3 py-2 text-sm">
             <Crown className="h-4 w-4 text-primary" />
             <span>
-              Member detected — <span className="font-medium">50% off nail art</span> applied
-              automatically.
+              Member detected — any membership discount is settled{" "}
+              <span className="font-medium">in-store</span> by our team.
             </span>
           </div>
         )}
@@ -538,25 +533,11 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                     <SelectValue placeholder="Choose service" />
                   </SelectTrigger>
                   <SelectContent>
-                    {services.map((s) => {
-                      const mp =
-                        isMember && s.isNailArt ? Math.round(s.price * 0.5) : null;
-                      return (
-                        <SelectItem key={s.name} value={s.name}>
-                          {s.name} —{" "}
-                          {mp !== null ? (
-                            <>
-                              <span className="line-through text-muted-foreground mr-1">
-                                ₹{s.price}
-                              </span>
-                              ₹{mp}
-                            </>
-                          ) : (
-                            <>₹{s.price}</>
-                          )}
-                        </SelectItem>
-                      );
-                    })}
+                    {services.map((s) => (
+                      <SelectItem key={s.name} value={s.name}>
+                        {s.name} — ₹{s.price}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               )}
@@ -567,11 +548,8 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
             {selectedService && (
               <p className="text-xs text-muted-foreground">
                 Service price:{" "}
-                <span className="font-medium text-foreground">
-                  ₹{memberPrice ?? selectedService.price}
-                </span>
-                {memberPrice !== null && <> (member 50% off)</>} · + ₹{bookingFee} booking fee
-                charged now.
+                <span className="font-medium text-foreground">₹{selectedService.price}</span>
+                {" "}· + ₹{bookingFee} booking fee charged now.
               </p>
             )}
             <p className="text-xs text-muted-foreground">

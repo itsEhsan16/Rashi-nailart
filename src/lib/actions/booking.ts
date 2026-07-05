@@ -115,21 +115,21 @@ async function staffWorksSlot(
   return ((data as { id: string }[] | null) ?? []).length > 0;
 }
 
-/** Authoritative price + nail-art flag from DB (falls back to constants pre-migration). */
+/** Authoritative price from DB (falls back to constants pre-migration). */
 async function resolveService(
   admin: Admin,
   name: string,
-): Promise<{ price: number; isNailArt: boolean } | null> {
+): Promise<{ price: number } | null> {
   const { data } = await admin
     .from("services")
-    .select("price, is_nail_art")
+    .select("price")
     .eq("name", name)
     .eq("active", true)
     .maybeSingle();
-  const row = data as { price: number; is_nail_art: boolean } | null;
-  if (row) return { price: row.price, isNailArt: row.is_nail_art };
+  const row = data as { price: number } | null;
+  if (row) return { price: row.price };
   const c = SERVICES.find((s) => s.name === name);
-  if (c) return { price: c.price, isNailArt: /nail/i.test(c.name) };
+  if (c) return { price: c.price };
   return null;
 }
 
@@ -137,8 +137,10 @@ async function resolveService(
  * Reserve the slot immediately as `pending_payment`. The unique index blocks
  * concurrent bookings of the same slot. The booking is finalized (→ `verified`)
  * automatically once Cashfree confirms the ₹50 fee (see createBookingOrder +
- * confirmBookingByOrder + the webhook). Member nail-art bookings get the 50%
- * discount on the service (charged in-store), priced authoritatively.
+ * confirmBookingByOrder + the webhook). Service is always priced at full
+ * price online — any membership discount is applied manually in-store by the
+ * manager, never automatically here. `is_member` is still stored so staff can
+ * see who's a member.
  *
  * Returns the appointment id (the customer's capability token for starting the
  * Cashfree payment) and the booking fee.
@@ -164,8 +166,6 @@ export async function createBooking(input: CreateBookingInput) {
   if (!svc) return { ok: false as const, error: "Selected service is unavailable" };
 
   const { isMember } = await activeMember(admin, d.phone);
-  const discount = isMember && svc.isNailArt ? Math.round(svc.price * 0.5) : 0;
-  const finalServicePrice = svc.price - discount;
 
   // Reclaim abandoned holds for this exact slot (never uploaded a proof, older
   // than the hold window). payment_uploaded/verified holds are never reclaimed.
@@ -190,13 +190,13 @@ export async function createBooking(input: CreateBookingInput) {
       appointment_date: d.appointment_date,
       time_slot: d.time_slot,
       service: d.service,
-      price: finalServicePrice,
+      price: svc.price,
       amount: BOOKING_FEE,
       staff_name: d.staff_name,
       special_requests: d.special_requests ?? null,
       payment_status: "pending_payment",
       is_member: isMember,
-      discount_applied: discount,
+      discount_applied: 0,
     })
     .select("id")
     .single();
@@ -217,8 +217,6 @@ export async function createBooking(input: CreateBookingInput) {
     appointmentId: appt.id,
     amount: BOOKING_FEE,
     isMember,
-    discount,
-    finalServicePrice,
   };
 }
 

@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
           await fulfillMembershipPayment(admin, pay);
           await notifyCustomer({
             phone: pay.phone ?? "",
-            message: `Hi ${pay.client_name ?? "there"}, your Rashi membership is confirmed — benefits are active now. Enjoy 50% off nail art!`,
+            message: `Hi ${pay.client_name ?? "there"}, your Rashi membership is confirmed — benefits are active now. Ask us in-store about your member discount!`,
           });
         }
       }

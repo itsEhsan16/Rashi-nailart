@@ -266,8 +266,8 @@ export default async function HomePage() {
                     One-year membership · ₹{MEMBERSHIP_PRICE}
                   </div>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">50% off every nail-art service</span>{" "}
-                    for a full year. Benefits start the day you join.
+                    <span className="font-medium text-foreground">A member discount</span>{" "}
+                    redeemed in-store, for a full year. Benefits start the day you join.
                   </p>
                 </div>
               </div>
@@ -344,7 +344,7 @@ export default async function HomePage() {
                 {[
                   "Live availability — no double bookings",
                   `Slot held for ${PENDING_HOLD_MINUTES} minutes while you pay`,
-                  "Members save 50% on nail art automatically",
+                  "Members get a discount, redeemed in-store",
                 ].map((line) => (
                   <li key={line} className="flex items-start gap-2.5">
                     <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />

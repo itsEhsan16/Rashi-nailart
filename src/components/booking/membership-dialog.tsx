@@ -129,7 +129,7 @@ export function MembershipDialog({ price }: { price: number }) {
             <PaySecureScreen
               amount={pending.amount}
               forLabel="membership fee"
-              summaryLine="1-Year Membership · 50% off nail art"
+              summaryLine="1-Year Membership · in-store member discount"
               onPay={payNow}
             />
           </>
@@ -140,8 +140,8 @@ export function MembershipDialog({ price }: { price: number }) {
                 <Crown className="h-5 w-5 text-primary" /> One Year Membership
               </DialogTitle>
               <DialogDescription>
-                ₹{price} for the year — 50% off all nail art services. Benefits start the day you
-                join. We use your phone to recognise you at booking.
+                ₹{price} for the year — unlocks a member discount, redeemed in-store by our team.
+                Benefits start the day you join. We use your phone to recognise you at booking.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
