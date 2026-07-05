@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { IndianRupee, PieChart, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { SectionHeader } from "@/components/dashboard/page-header";
-import { recentMonths } from "@/lib/utils";
+import { formatLocalDate, recentMonths } from "@/lib/utils";
 import { getManagerOverview, type ManagerOverview } from "@/lib/actions/admin";
 import { RevenueBreakdownDialog } from "./revenue-breakdown-dialog";
 import { StaffEarningsTable } from "./staff-earnings-table";
@@ -28,12 +28,30 @@ const monthLabel = (m: string) => format(new Date(`${m}-01T00:00:00`), "MMMM yyy
 /** Manager dashboard landing: branch revenue + per-artist earnings for a month,
  *  scoped to the manager's own branch. Memberships are salon-wide and excluded. */
 export function ManagerOverviewPanel() {
-  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const [now, setNow] = useState(() => Date.now());
+  // Local calendar date (not UTC) and re-derived as the wall clock ticks, so a
+  // dashboard left open across a month boundary rolls over on its own.
+  const currentMonth = useMemo(() => formatLocalDate(new Date(now)).slice(0, 7), [now]);
   const months = useMemo(() => recentMonths(currentMonth, 12), [currentMonth]);
   const [month, setMonth] = useState(currentMonth);
+  const monthTouched = useRef(false);
   const [data, setData] = useState<ManagerOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!monthTouched.current) setMonth(currentMonth);
+  }, [currentMonth]);
+
+  function onMonthChange(m: string) {
+    monthTouched.current = true;
+    setMonth(m);
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -50,7 +68,7 @@ export function ManagerOverviewPanel() {
   }, [load]);
 
   const monthPicker = (
-    <Select value={month} onValueChange={setMonth}>
+    <Select value={month} onValueChange={onMonthChange}>
       <SelectTrigger className="w-44">
         <SelectValue />
       </SelectTrigger>
