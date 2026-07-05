@@ -37,7 +37,7 @@ export default async function MembershipConfirmPage({
             </div>
             <h1 className="font-display text-2xl font-semibold">Thanks for joining! ✨</h1>
             <p className="mt-2 flex items-center justify-center gap-1.5 text-muted-foreground">
-              <Crown className="h-4 w-4 text-primary" /> 1-Year Membership · 50% off nail art
+              <Crown className="h-4 w-4 text-primary" /> 1-Year Membership · in-store member discount
             </p>
 
             <div className="mx-auto mt-5 max-w-sm rounded-lg border border-border/60 bg-muted/40 px-4 py-3 text-left text-sm text-muted-foreground">

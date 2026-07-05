@@ -137,7 +137,7 @@ function ServicesManager() {
                 </div>
               </div>
               <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
-                <Label htmlFor="nailart">Nail-art (member 50% off applies)</Label>
+                <Label htmlFor="nailart">Nail-art (informational tag only — no automatic discount)</Label>
                 <Switch
                   id="nailart"
                   checked={form.is_nail_art}

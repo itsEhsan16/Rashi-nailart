@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     template: "%s · Rashi Nail Art Studio",
   },
   description:
-    "Book your salon moment at Rashi Nail Art Studio — Vile Parle & Bandra. Premium nail art, gel polish & extensions. Members get 50% off nail art for a year.",
+    "Book your salon moment at Rashi Nail Art Studio — Vile Parle & Bandra. Premium nail art, gel polish & extensions. Members get an in-store discount for a year.",
   applicationName: "Rashi Nail Art Studio",
   authors: [{ name: "Rashi Nail Art Studio" }],
   keywords: [

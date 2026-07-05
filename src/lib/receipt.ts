@@ -128,7 +128,7 @@ export function buildReceiptPdf(data: ReceiptData): jsPDF {
   const note =
     data.kind === "booking"
       ? "This confirms your booking fee. Please pay any remaining balance at the studio. Thank you!"
-      : "Welcome to the Rashi membership — enjoy 50% off nail art for a year. Thank you!";
+      : "Welcome to the Rashi membership — your member discount is redeemed in-store for a year. Thank you!";
   doc.text(doc.splitTextToSize(note, right - left), left, y);
   y += 34;
   doc.setTextColor(150);

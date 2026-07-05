@@ -19,7 +19,7 @@ const FAQS: { q: string; a: string }[] = [
   },
   {
     q: "How does the ₹100 membership work?",
-    a: "A one-year membership gives you 50% off every nail-art service. Benefits start the day you join and stay valid for a full year. We recognise you automatically by your phone number at booking.",
+    a: "A one-year membership unlocks a member discount, redeemed in-store by our team. Benefits start the day you join and stay valid for a full year. We recognise you automatically by your phone number at booking.",
   },
   {
     q: "Can I reschedule or cancel?",

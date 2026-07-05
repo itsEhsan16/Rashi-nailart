@@ -207,7 +207,7 @@ export async function confirmMembershipByOrder(
 
   await notifyCustomer({
     phone: row.phone ?? "",
-    message: `Hi ${row.client_name ?? "there"}, your Rashi membership is confirmed — benefits are active now. Enjoy 50% off nail art!`,
+    message: `Hi ${row.client_name ?? "there"}, your Rashi membership is confirmed — benefits are active now. Ask us in-store about your member discount!`,
   });
 
   return {
