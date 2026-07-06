@@ -74,9 +74,13 @@ export function appointmentStartMs(appointmentDate: string, slot: string): numbe
   return Number.isNaN(base) ? NaN : base + slotStartMinutes(slot) * 60_000;
 }
 
-/** Same-day bookings may not start at/after this hour (24h, IST) — e.g. 18 blocks
- *  a slot starting at 6:00 PM or later. Future and past dates are never affected. */
-export const SAME_DAY_BOOKING_CUTOFF_HOUR = 18;
+/** Per-day-offset-from-today (IST) cutoff hour (24h) — a slot starting at/after
+ *  this hour isn't offered for that relative date. 0 = today, 1 = tomorrow, etc.
+ *  A day with no entry here has no cutoff at all. */
+export const NEAR_TERM_BOOKING_CUTOFFS: Record<number, number> = {
+  0: 18, // today: last bookable slot starts before 6 PM
+  1: 17, // tomorrow: last bookable slot starts before 5 PM
+};
 
 /**
  * Today's calendar date in IST as "YYYY-MM-DD", independent of server timezone.
@@ -88,16 +92,32 @@ export function todayIsoIst(): string {
   return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** Whole days between `appointmentDate` and today (IST): 0 = today, 1 = tomorrow,
+ *  negative = past. Pure calendar-date math, safe regardless of server timezone. */
+function daysFromTodayIst(appointmentDate: string): number {
+  const todayMs = Date.parse(`${todayIsoIst()}T00:00:00Z`);
+  const dateMs = Date.parse(`${appointmentDate}T00:00:00Z`);
+  return Math.round((dateMs - todayMs) / 86_400_000);
+}
+
 /**
- * True if `slot` shouldn't be offered because `appointmentDate` is the studio's
- * current IST day and the slot starts at/after SAME_DAY_BOOKING_CUTOFF_HOUR.
- * Future dates (and past ones, already blocked elsewhere) are never affected.
+ * Human-readable reason `slot` isn't offered on `appointmentDate` because of a
+ * near-term cutoff (see NEAR_TERM_BOOKING_CUTOFFS), or null if it's open. Dates
+ * without a configured cutoff (including all future dates beyond the table) are
+ * always open.
  */
-export function isSameDaySlotBlocked(appointmentDate: string, slot: string): boolean {
-  return (
-    appointmentDate === todayIsoIst() &&
-    slotStartMinutes(slot) >= SAME_DAY_BOOKING_CUTOFF_HOUR * 60
-  );
+export function slotCutoffLabel(appointmentDate: string, slot: string): string | null {
+  const offset = daysFromTodayIst(appointmentDate);
+  const cutoffHour = NEAR_TERM_BOOKING_CUTOFFS[offset];
+  if (cutoffHour === undefined || slotStartMinutes(slot) < cutoffHour * 60) return null;
+  if (offset === 0) return "closed for today";
+  if (offset === 1) return "closed for tomorrow";
+  return "closed for this date";
+}
+
+/** True if `slot` isn't offered on `appointmentDate` per NEAR_TERM_BOOKING_CUTOFFS. */
+export function isSlotCutoffBlocked(appointmentDate: string, slot: string): boolean {
+  return slotCutoffLabel(appointmentDate, slot) !== null;
 }
 
 /**
