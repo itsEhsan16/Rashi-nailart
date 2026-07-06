@@ -22,7 +22,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Card } from "@/components/ui/card";
 import { StaffAvatar } from "@/components/staff-avatar";
-import { cn, slotStartLabel } from "@/lib/utils";
+import { cn, isSameDaySlotBlocked, slotStartLabel } from "@/lib/utils";
 
 import { bookingFormSchema, type BookingFormValues } from "@/lib/validations/booking";
 import {
@@ -222,6 +222,10 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   const selectedService = useMemo(
     () => services.find((s) => s.name === serviceName),
     [services, serviceName],
+  );
+  const apptDateStr = useMemo(
+    () => (apptDate ? format(apptDate, "yyyy-MM-dd") : null),
+    [apptDate],
   );
   const slotsReady = Boolean(branch && staffName && apptDate);
   const noStylistsForDate = Boolean(branch && apptDate && filteredStaff.length === 0);
@@ -506,10 +510,11 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                   <SelectContent>
                     {availableSlots.map((t) => {
                       const taken = bookedSlots.includes(t);
+                      const closedForToday = apptDateStr ? isSameDaySlotBlocked(apptDateStr, t) : false;
                       return (
-                        <SelectItem key={t} value={t} disabled={taken}>
+                        <SelectItem key={t} value={t} disabled={taken || closedForToday}>
                           {slotStartLabel(t)}
-                          {taken ? " · booked" : ""}
+                          {taken ? " · booked" : closedForToday ? " · closed for today" : ""}
                         </SelectItem>
                       );
                     })}

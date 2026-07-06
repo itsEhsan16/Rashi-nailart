@@ -17,6 +17,7 @@ import {
   synthEmail,
 } from "@/lib/cashfree";
 import { notifyCustomer } from "@/lib/notify";
+import { isSameDaySlotBlocked } from "@/lib/utils";
 import {
   BRANCHES_TUPLE,
   createBookingInputSchema,
@@ -159,6 +160,15 @@ export async function createBooking(input: CreateBookingInput) {
     return {
       ok: false as const,
       error: "That artist isn't available at the selected time. Please pick another slot, date, or artist.",
+    };
+  }
+
+  // Same-day cutoff: today's date can't book a slot starting at/after 6 PM IST.
+  // Defends against a crafted submission bypassing the form's disabled option.
+  if (isSameDaySlotBlocked(d.appointment_date, d.time_slot)) {
+    return {
+      ok: false as const,
+      error: "Same-day bookings close at 6 PM. Please choose an earlier slot or another date.",
     };
   }
 
