@@ -74,6 +74,32 @@ export function appointmentStartMs(appointmentDate: string, slot: string): numbe
   return Number.isNaN(base) ? NaN : base + slotStartMinutes(slot) * 60_000;
 }
 
+/** Same-day bookings may not start at/after this hour (24h, IST) — e.g. 18 blocks
+ *  a slot starting at 6:00 PM or later. Future and past dates are never affected. */
+export const SAME_DAY_BOOKING_CUTOFF_HOUR = 18;
+
+/**
+ * Today's calendar date in IST as "YYYY-MM-DD", independent of server timezone.
+ * Same pinned +05:30 offset as appointmentStartMs, so "today" means the studio's
+ * local day even on a UTC server (e.g. Vercel).
+ */
+export function todayIsoIst(): string {
+  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+  return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * True if `slot` shouldn't be offered because `appointmentDate` is the studio's
+ * current IST day and the slot starts at/after SAME_DAY_BOOKING_CUTOFF_HOUR.
+ * Future dates (and past ones, already blocked elsewhere) are never affected.
+ */
+export function isSameDaySlotBlocked(appointmentDate: string, slot: string): boolean {
+  return (
+    appointmentDate === todayIsoIst() &&
+    slotStartMinutes(slot) >= SAME_DAY_BOOKING_CUTOFF_HOUR * 60
+  );
+}
+
 /**
  * The `count` most recent months as "YYYY-MM", newest first, starting at `current`.
  *   recentMonths("2026-03", 3) -> ["2026-03", "2026-02", "2026-01"]
