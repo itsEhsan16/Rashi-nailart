@@ -22,7 +22,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Card } from "@/components/ui/card";
 import { StaffAvatar } from "@/components/staff-avatar";
-import { cn, isSameDaySlotBlocked, slotStartLabel } from "@/lib/utils";
+import { cn, slotCutoffLabel, slotStartLabel } from "@/lib/utils";
 
 import { bookingFormSchema, type BookingFormValues } from "@/lib/validations/booking";
 import {
@@ -510,11 +510,11 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                   <SelectContent>
                     {availableSlots.map((t) => {
                       const taken = bookedSlots.includes(t);
-                      const closedForToday = apptDateStr ? isSameDaySlotBlocked(apptDateStr, t) : false;
+                      const cutoffLabel = apptDateStr ? slotCutoffLabel(apptDateStr, t) : null;
                       return (
-                        <SelectItem key={t} value={t} disabled={taken || closedForToday}>
+                        <SelectItem key={t} value={t} disabled={taken || Boolean(cutoffLabel)}>
                           {slotStartLabel(t)}
-                          {taken ? " · booked" : closedForToday ? " · closed for today" : ""}
+                          {taken ? " · booked" : cutoffLabel ? ` · ${cutoffLabel}` : ""}
                         </SelectItem>
                       );
                     })}
