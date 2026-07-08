@@ -74,48 +74,34 @@ export function appointmentStartMs(appointmentDate: string, slot: string): numbe
   return Number.isNaN(base) ? NaN : base + slotStartMinutes(slot) * 60_000;
 }
 
-/** Per-day-offset-from-today (IST) cutoff hour (24h) — a slot starting at/after
- *  this hour isn't offered for that relative date. 0 = today, 1 = tomorrow, etc.
- *  A day with no entry here has no cutoff at all. */
-export const NEAR_TERM_BOOKING_CUTOFFS: Record<number, number> = {
-  0: 18, // today: last bookable slot starts before 6 PM
-  1: 17, // tomorrow: last bookable slot starts before 5 PM
+/** Cutoff hour (24h, IST) for specific calendar dates — a slot starting at/after
+ *  the hour isn't offered on that exact date. Pinned to the date itself (NOT
+ *  relative to "today"), so it doesn't drift as the real calendar advances. Add
+ *  or remove entries here per date; any date with no entry has no cutoff. */
+export const DATED_BOOKING_CUTOFFS: Record<string, number> = {
+  "2026-07-06": 18, // 6:00 PM
+  "2026-07-07": 17, // 5:00 PM
 };
 
-/**
- * Today's calendar date in IST as "YYYY-MM-DD", independent of server timezone.
- * Same pinned +05:30 offset as appointmentStartMs, so "today" means the studio's
- * local day even on a UTC server (e.g. Vercel).
- */
-export function todayIsoIst(): string {
-  const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
-  return new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 10);
-}
-
-/** Whole days between `appointmentDate` and today (IST): 0 = today, 1 = tomorrow,
- *  negative = past. Pure calendar-date math, safe regardless of server timezone. */
-function daysFromTodayIst(appointmentDate: string): number {
-  const todayMs = Date.parse(`${todayIsoIst()}T00:00:00Z`);
-  const dateMs = Date.parse(`${appointmentDate}T00:00:00Z`);
-  return Math.round((dateMs - todayMs) / 86_400_000);
+/** "18" -> "6:00 PM". Used to phrase the cutoff for display. */
+function cutoffHourLabel(hour: number): string {
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  const period = hour >= 12 ? "PM" : "AM";
+  return `${h12}:00 ${period}`;
 }
 
 /**
  * Human-readable reason `slot` isn't offered on `appointmentDate` because of a
- * near-term cutoff (see NEAR_TERM_BOOKING_CUTOFFS), or null if it's open. Dates
- * without a configured cutoff (including all future dates beyond the table) are
- * always open.
+ * dated cutoff (see DATED_BOOKING_CUTOFFS), or null if it's open. Dates without
+ * a configured cutoff are always open.
  */
 export function slotCutoffLabel(appointmentDate: string, slot: string): string | null {
-  const offset = daysFromTodayIst(appointmentDate);
-  const cutoffHour = NEAR_TERM_BOOKING_CUTOFFS[offset];
+  const cutoffHour = DATED_BOOKING_CUTOFFS[appointmentDate];
   if (cutoffHour === undefined || slotStartMinutes(slot) < cutoffHour * 60) return null;
-  if (offset === 0) return "closed for today";
-  if (offset === 1) return "closed for tomorrow";
-  return "closed for this date";
+  return `closes at ${cutoffHourLabel(cutoffHour)}`;
 }
 
-/** True if `slot` isn't offered on `appointmentDate` per NEAR_TERM_BOOKING_CUTOFFS. */
+/** True if `slot` isn't offered on `appointmentDate` per DATED_BOOKING_CUTOFFS. */
 export function isSlotCutoffBlocked(appointmentDate: string, slot: string): boolean {
   return slotCutoffLabel(appointmentDate, slot) !== null;
 }
