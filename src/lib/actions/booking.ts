@@ -163,8 +163,8 @@ export async function createBooking(input: CreateBookingInput) {
     };
   }
 
-  // Near-term cutoff: today/tomorrow close earlier than the full slot list (see
-  // NEAR_TERM_BOOKING_CUTOFFS). Defends against a crafted submission bypassing
+  // Dated cutoff: specific calendar dates close earlier than the full slot list
+  // (see DATED_BOOKING_CUTOFFS). Defends against a crafted submission bypassing
   // the form's disabled option.
   if (isSlotCutoffBlocked(d.appointment_date, d.time_slot)) {
     return {
