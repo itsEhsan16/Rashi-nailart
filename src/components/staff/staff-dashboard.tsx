@@ -18,6 +18,7 @@ import {
 import { PageHeader } from "@/components/dashboard/page-header";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { ExtrasDialog } from "@/components/dashboard/extras-dialog";
+import { ChangeServiceDialog } from "@/components/dashboard/change-service-dialog";
 import { formatLocalDate, recentMonths } from "@/lib/utils";
 import { listBookings, completeBooking, type BookingRow } from "@/lib/actions/admin";
 import { computeMonthlyStats } from "./staff-metrics";
@@ -36,6 +37,7 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
   const [now, setNow] = useState(() => Date.now());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [extrasFor, setExtrasFor] = useState<BookingRow | null>(null);
+  const [changeServiceFor, setChangeServiceFor] = useState<BookingRow | null>(null);
 
   // Derived from the ticking `now` (not just mount time) so a dashboard left open
   // across a month boundary rolls over to the new month on its own.
@@ -194,6 +196,7 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
                 busyId={busyId}
                 onComplete={onComplete}
                 onOpenExtras={setExtrasFor}
+                onChangeService={setChangeServiceFor}
               />
               {reassignedAwayActive.length > 0 && (
                 <div className="space-y-2.5">
@@ -224,6 +227,11 @@ export function StaffDashboard({ greetingName }: { greetingName: string }) {
       )}
 
       <ExtrasDialog booking={extrasFor} onOpenChange={(o) => !o && setExtrasFor(null)} onChanged={load} />
+      <ChangeServiceDialog
+        booking={changeServiceFor}
+        onOpenChange={(o) => !o && setChangeServiceFor(null)}
+        onChanged={load}
+      />
     </div>
   );
 }

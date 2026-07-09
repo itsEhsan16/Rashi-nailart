@@ -8,6 +8,7 @@ import {
   Clock,
   MapPin,
   Receipt,
+  Scissors,
   Smartphone,
   Loader2,
 } from "lucide-react";
@@ -27,12 +28,14 @@ export function TaskCard({
   busy,
   onComplete,
   onOpenExtras,
+  onChangeService,
 }: {
   row: BookingRow;
   state: TaskState;
   busy: boolean;
   onComplete: (id: string) => void;
   onOpenExtras: (row: BookingRow) => void;
+  onChangeService?: (row: BookingRow) => void;
 }) {
   const isNow = state === "now";
   const isDone = state === "completed";
@@ -136,6 +139,11 @@ export function TaskCard({
           another artist's task now. */}
       {row.payment_status === "verified" && !row.completed && !reassignedAway && (
         <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-2.5">
+          {onChangeService && (
+            <Button size="sm" variant="outline" onClick={() => onChangeService(row)}>
+              <Scissors className="mr-1 h-4 w-4" /> Change
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => onOpenExtras(row)}>
             <Receipt className="mr-1 h-4 w-4" /> Extras
           </Button>
