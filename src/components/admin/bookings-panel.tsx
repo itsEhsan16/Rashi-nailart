@@ -13,6 +13,7 @@ import {
   Receipt,
   CalendarX2,
   UserCog,
+  Scissors,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,11 +44,12 @@ import { StatusPill } from "@/components/dashboard/status-pill";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ExtrasDialog } from "@/components/dashboard/extras-dialog";
 import { ReassignDialog } from "@/components/dashboard/reassign-dialog";
+import { ChangeServiceDialog } from "@/components/dashboard/change-service-dialog";
 import { TableSkeleton } from "@/components/dashboard/skeletons";
-import { cn, appointmentStartMs } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { sortBySchedule } from "@/lib/booking-sort";
 import { downloadCsv } from "@/lib/export-csv";
-import { BRANCHES, CANCELLATION_CUTOFF_MS, CANCELLATION_CUTOFF_HOURS } from "@/lib/salon-data";
+import { BRANCHES } from "@/lib/salon-data";
 import type { UserRole } from "@/lib/auth";
 import {
   listBookings,
@@ -119,6 +121,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
 
   const [extrasFor, setExtrasFor] = useState<BookingRow | null>(null);
   const [reassignFor, setReassignFor] = useState<BookingRow | null>(null);
+  const [changeServiceFor, setChangeServiceFor] = useState<BookingRow | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -186,11 +189,6 @@ export function BookingsPanel({ role }: { role: UserRole }) {
 
   /** Action buttons, shared between the desktop table and mobile cards. */
   function RowActions({ r }: { r: BookingRow }) {
-    // Managers may cancel only >cutoff hours before the start; admin is exempt. NaN
-    // (unparseable slot) fails open so a malformed row is still cancellable. Server re-checks.
-    const tooCloseToCancel =
-      role === "manager" &&
-      appointmentStartMs(r.appointment_date, r.time_slot) - Date.now() < CANCELLATION_CUTOFF_MS;
     return (
       <div className="flex flex-wrap items-center justify-end gap-1">
         {/* Extras/payment stay editable even after completion so a manager can log
@@ -205,29 +203,26 @@ export function BookingsPanel({ role }: { role: UserRole }) {
             <CheckCircle2 className="mr-1 h-4 w-4" /> Done
           </Button>
         )}
+        {!r.completed && r.payment_status === "verified" && (
+          <Button size="sm" variant="outline" onClick={() => setChangeServiceFor(r)}>
+            <Scissors className="mr-1 h-4 w-4" /> Change service
+          </Button>
+        )}
         {canManage && !r.completed && r.payment_status === "verified" && (
           <Button size="sm" variant="outline" onClick={() => setReassignFor(r)}>
             <UserCog className="mr-1 h-4 w-4" /> Reassign
           </Button>
         )}
         {canManage && !r.completed && r.payment_status === "verified" && (
-          <span
-            title={
-              tooCloseToCancel
-                ? `Too late to cancel (within ${CANCELLATION_CUTOFF_HOURS} hours). Ask an admin.`
-                : "Cancel"
-            }
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8"
+            title="Cancel"
+            onClick={() => onCancel(r.id)}
           >
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              disabled={tooCloseToCancel}
-              onClick={() => onCancel(r.id)}
-            >
-              <Ban className="h-4 w-4" />
-            </Button>
-          </span>
+            <Ban className="h-4 w-4" />
+          </Button>
         )}
         {canManage && (
           <Button
@@ -527,6 +522,12 @@ export function BookingsPanel({ role }: { role: UserRole }) {
       <ReassignDialog
         booking={reassignFor}
         onOpenChange={(o) => !o && setReassignFor(null)}
+        onChanged={load}
+      />
+
+      <ChangeServiceDialog
+        booking={changeServiceFor}
+        onOpenChange={(o) => !o && setChangeServiceFor(null)}
         onChanged={load}
       />
     </div>

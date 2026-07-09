@@ -20,12 +20,14 @@ export function StaffTaskList({
   busyId,
   onComplete,
   onOpenExtras,
+  onChangeService,
 }: {
   rows: BookingRow[];
   now: number;
   busyId: string | null;
   onComplete: (id: string) => void;
   onOpenExtras: (row: BookingRow) => void;
+  onChangeService: (row: BookingRow) => void;
 }) {
   if (rows.length === 0) {
     return (
@@ -59,6 +61,7 @@ export function StaffTaskList({
               busy={busyId === row.id}
               onComplete={onComplete}
               onOpenExtras={onOpenExtras}
+              onChangeService={onChangeService}
             />
           </div>
         );

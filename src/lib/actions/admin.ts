@@ -14,11 +14,10 @@ import {
   isAcceptedProofFile,
   PAYMENT_MODE_VALUES,
   SLOT_HOLDING_STATUSES,
-  CANCELLATION_CUTOFF_MS,
-  CANCELLATION_CUTOFF_HOURS,
+  SERVICES,
   type PaymentMode,
 } from "@/lib/salon-data";
-import { appointmentStartMs, monthBounds, daysInMonth } from "@/lib/utils";
+import { monthBounds, daysInMonth } from "@/lib/utils";
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { UPI_VPA_RE } from "@/lib/upi";
 import { isMissingStaffPhotoColumn } from "@/lib/staff-photos";
@@ -202,6 +201,8 @@ export async function setBookingPaymentMode(input: z.infer<typeof paymentModeInp
   return { ok: true as const };
 }
 
+/** Cancel a confirmed booking, freeing its slot (payment_status → "cancelled",
+ *  which is not a slot-holding status). Admin and manager may cancel at any time. */
 export async function cancelBooking(input: { id: string }) {
   const profile = await requireRole(["admin", "manager"]);
   if (!profile) return UNAUTHORIZED;
@@ -209,26 +210,6 @@ export async function cancelBooking(input: { id: string }) {
   if (!parsed.success) return { ok: false as const, error: "Invalid id" };
   const admin = createAdminClient();
   if (!(await scopedAppointmentMatch(admin, profile, parsed.data.id))) return UNAUTHORIZED;
-
-  // Managers may cancel only more than the cutoff window before the start; admin is exempt.
-  if (profile.role === "manager") {
-    const { data } = await admin
-      .from("appointments")
-      .select("appointment_date, time_slot")
-      .eq("id", parsed.data.id)
-      .maybeSingle();
-    const row = data as { appointment_date: string; time_slot: string } | null;
-    if (row) {
-      const startMs = appointmentStartMs(row.appointment_date, row.time_slot);
-      // NaN (unparseable date) fails open, matching the app's lenient slot handling.
-      if (!Number.isNaN(startMs) && startMs - Date.now() < CANCELLATION_CUTOFF_MS) {
-        return {
-          ok: false as const,
-          error: `Bookings can only be cancelled more than ${CANCELLATION_CUTOFF_HOURS} hours before the start time. Please ask an admin.`,
-        };
-      }
-    }
-  }
 
   const { error } = await admin
     .from("appointments")
@@ -381,6 +362,88 @@ export async function reassignBookingStaff(input: z.infer<typeof reassignInput>)
     }
     return { ok: false as const, error: error.message };
   }
+  return { ok: true as const };
+}
+
+// ─────────────────── Change a booking's base service ────────────────────────
+export type ServiceOptionRow = { name: string; price: number };
+
+/**
+ * Active services (name + price) for the in-studio "change service" picker.
+ * Available to any staff/manager/admin acting on their own bookings (unlike the
+ * admin-only `listServices`). Falls back to the bundled constants pre-migration.
+ */
+export async function listActiveServices() {
+  const profile = await requireRole(["admin", "manager", "staff"]);
+  if (!profile) return { ...UNAUTHORIZED, services: [] as ServiceOptionRow[] };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("services")
+    .select("name, price")
+    .eq("active", true)
+    .order("sort_order");
+  if (error) return { ok: false as const, error: error.message, services: [] as ServiceOptionRow[] };
+  const rows = (data as ServiceOptionRow[] | null) ?? [];
+  const services = rows.length ? rows : SERVICES.map((s) => ({ name: s.name, price: s.price }));
+  return { ok: true as const, services };
+}
+
+/** Authoritative price for an active service by name (fallback to constants). null if unknown. */
+async function resolveActiveServicePrice(admin: Admin, name: string): Promise<number | null> {
+  const { data } = await admin
+    .from("services")
+    .select("price")
+    .eq("name", name)
+    .eq("active", true)
+    .maybeSingle();
+  const row = data as { price: number } | null;
+  if (row) return row.price;
+  const c = SERVICES.find((s) => s.name === name);
+  return c ? c.price : null;
+}
+
+const changeServiceInput = z.object({
+  id: z.string().uuid(),
+  service: z.string().trim().min(1).max(100),
+});
+
+/**
+ * Swap a booking's base service — e.g. the customer arrives and decides to do a
+ * different service than they booked. Re-prices from the services table (fallback
+ * to constants), updating both `service` and `price` so earnings/revenue reflect
+ * what was actually done. Only on confirmed, not-yet-completed bookings.
+ * Authorized for the assigned stylist, the branch manager and admin.
+ */
+export async function changeBookingService(input: z.infer<typeof changeServiceInput>) {
+  const profile = await requireRole(["admin", "manager", "staff"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = changeServiceInput.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid" };
+  const admin = createAdminClient();
+  if (!(await scopedAppointmentMatch(admin, profile, parsed.data.id))) return UNAUTHORIZED;
+
+  const { data: b } = await admin
+    .from("appointments")
+    .select("payment_status, completed")
+    .eq("id", parsed.data.id)
+    .maybeSingle();
+  const bk = b as { payment_status: string; completed: boolean } | null;
+  if (!bk) return { ok: false as const, error: "Booking not found" };
+  if (bk.payment_status !== "verified") {
+    return { ok: false as const, error: "Only a confirmed booking's service can be changed." };
+  }
+  if (bk.completed) {
+    return { ok: false as const, error: "A completed booking's service can't be changed." };
+  }
+
+  const price = await resolveActiveServicePrice(admin, parsed.data.service);
+  if (price == null) return { ok: false as const, error: "That service isn't available." };
+
+  const { error } = await admin
+    .from("appointments")
+    .update({ service: parsed.data.service, price })
+    .eq("id", parsed.data.id);
+  if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
 }
 

@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { confirmBookingByOrder } from "@/lib/actions/booking";
 import { ReceiptDownload } from "@/components/booking/receipt-download";
 import { slotStartLabel } from "@/lib/utils";
-import { CANCELLATION_CUTOFF_HOURS } from "@/lib/salon-data";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Booking confirmation", robots: { index: false } };
@@ -59,10 +58,9 @@ export default async function BookingConfirmPage({
             <div className="mx-auto mt-3 max-w-sm rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-left text-sm text-amber-700 dark:text-amber-400">
               <p className="font-medium">Please reach the studio on time</p>
               <p className="mt-1">
-                Your ₹{result.booking.amount} booking fee is non-refundable if you don&apos;t arrive
-                for your appointment. Need to cancel? Contact the studio at least{" "}
-                {CANCELLATION_CUTOFF_HOURS} hours before your slot — cancellations aren&apos;t
-                possible after that.
+                There&apos;s no cancellation facility — once your slot is booked it&apos;s confirmed
+                and locked in, and your ₹{result.booking.amount} booking fee is non-refundable.
+                Please make sure you can attend before booking.
               </p>
             </div>
 
