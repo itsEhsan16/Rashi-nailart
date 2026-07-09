@@ -1,8 +1,8 @@
 # Rashi Nail Art Studio
 
-A production-ready salon appointment-booking platform — **Next.js 14+ (App Router)**, **TypeScript (strict)**, **Tailwind v4 + shadcn/ui**, **Supabase** (Auth, Postgres, RLS, Storage) with **manual UPI + screenshot-verified** payments. Migrated from the original TanStack Start app (see [`MIGRATION_PLAN.md`](./MIGRATION_PLAN.md)).
+A production-ready salon appointment-booking platform — **Next.js 14+ (App Router)**, **TypeScript (strict)**, **Tailwind v4 + shadcn/ui**, **Supabase** (Auth, Postgres, RLS, Storage) with **Cashfree online payments** (auto-confirmed via return page + webhook). Migrated from the original TanStack Start app (see [`MIGRATION_PLAN.md`](./MIGRATION_PLAN.md)).
 
-Branches: **Vile Parle · Bandra · Kandivali** — all in **Mumbai**.
+Branches: **Vile Parle · Bandra** — in **Mumbai**.
 
 ---
 
@@ -11,13 +11,17 @@ Branches: **Vile Parle · Bandra · Kandivali** — all in **Mumbai**.
 **Customers (no account needed — guest/phone-based)**
 - Marketing landing page (hero, services, gallery, membership, branches, testimonials, FAQ) with subtle motion and SEO/JSON-LD.
 - Smart booking form (react-hook-form + zod): cascading **branch → stylist → date → time-slot** with **live availability** (booked slots disabled, no double-booking).
-- **₹50 booking fee** paid over **manual UPI**: the slot is held immediately, the customer pays via QR / UPI ID and uploads a payment screenshot, and an **admin verifies it by hand** before the booking is confirmed. Form details survive a refresh.
-- **₹100 one-year membership** → **50% off nail-art services** (same UPI + verification flow). Benefits **activate 10 days** after the payment is verified; members are auto-detected by phone and the discount is applied automatically.
+- **₹50 booking fee** paid online via **Cashfree hosted checkout**: the slot is held immediately, the customer pays, and the booking **auto-confirms** (Cashfree return page + webhook reconcile the payment — no manual verification). Form details survive a refresh / return from the payment page.
+- **No cancellation facility** — once a slot is booked it's confirmed and locked in, and the ₹50 fee is non-refundable (surfaced in the FAQ + confirmation screen).
+- **₹100 one-year membership** (same Cashfree flow). Members are auto-detected by phone at booking; the **member discount is settled in-store by staff**, not auto-applied online.
 
 **Staff / Manager / Admin (Supabase Auth)**
-- **Admin**: a **Payments / Verification** queue (verify or reject uploaded UPI proofs, view full-size screenshots via signed URLs), revenue analytics (recharts, counts **only verified** bookings/memberships + a **Pending verification** stat), bookings table (filter by date/branch/staff/status, complete/cancel/delete, **CSV export**), members list (activation/expiry), a **Settings** tab to edit the **UPI ID / payee / QR** live, manage **services, time slots, branches, stylists**, and **team logins**.
-- **Manager**: branch-scoped bookings with **payment status + screenshot view (view-only)**, members, stylists and team.
-- **Staff**: their own appointments + “mark complete”.
+- **Admin**: month-scoped revenue analytics (recharts — booking fees, in-store service + extras, memberships), bookings table (filter by date/branch/staff/status, complete/cancel/delete, **CSV export**), members list (activation/expiry), a **Settings** tab, and full management of **services, time slots, branches, stylists, team logins** and **staff salaries/payroll**.
+- **Manager**: branch-scoped bookings and overview, members, stylists, team, and payroll for their branch.
+- **Staff**: their own auto-sorting task list (what's next on top), **mark complete**, add **in-store extras**, record how the customer paid, and month-scoped **earnings + 10% commission** and **net salary**.
+- **In-studio service change** (stylist/manager/admin): swap a confirmed booking's base service when the customer changes their mind on arrival — it re-prices automatically so earnings/revenue follow what was actually done.
+- **Booking reassignment** (manager/admin): move a walk-in to another available artist; the original artist keeps a read-only "reassigned to…" trace and the revenue follows the new artist.
+- **Cancel/free a slot** (manager/admin, any time) for no-shows and operational fixes.
 - Routes protected by middleware; fine-grained role checks in each dashboard layout; **RLS on every table**.
 
 ---
@@ -30,7 +34,7 @@ Branches: **Vile Parle · Bandra · Kandivali** — all in **Mumbai**.
 | Language | TypeScript (`strict`, no `any`) |
 | Styling | Tailwind v4 (`@tailwindcss/postcss`) + shadcn/ui |
 | Data/Auth | Supabase (`@supabase/ssr`) — Postgres, RLS, Auth |
-| Payments | Manual UPI + screenshot upload → admin verification (Supabase Storage, signed URLs) |
+| Payments | Cashfree hosted checkout → auto-confirm (return page + webhook, HMAC-verified) |
 | Forms | react-hook-form + zod |
 | Charts | recharts · Motion: framer-motion |
 | Deploy | Vercel |
@@ -63,10 +67,14 @@ Copy `.env.example` → `.env.local` and fill these in. **Never commit `.env.loc
 | `NEXT_PUBLIC_SUPABASE_URL` | public | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public | Supabase anon/publishable key |
 | `SUPABASE_URL` | server | Same project URL (server-side) |
-| `SUPABASE_SERVICE_ROLE_KEY` | **server, secret** | Service-role key — used by server actions for trusted writes + proof storage. Bypasses RLS. |
-| `NEXT_PUBLIC_SITE_URL` | public | Public base URL (SEO/canonical) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **server, secret** | Service-role key — used by server actions for trusted writes. Bypasses RLS. |
+| `NEXT_PUBLIC_SITE_URL` | public | Public base URL (SEO/canonical + Cashfree return/webhook URL) |
+| `CASHFREE_APP_ID` | **server, secret** | Cashfree app id (SANDBOX keys locally) |
+| `CASHFREE_SECRET_KEY` | **server, secret** | Cashfree secret — also the webhook HMAC secret |
+| `NEXT_PUBLIC_CASHFREE_MODE` | public | `sandbox` \| `production` |
+| `CASHFREE_API_VERSION` | server, optional | Pin the Cashfree API version (defaults to `2025-01-01`) |
 
-> 💡 There are **no payment-gateway secrets**. The UPI ID, payee name and QR image live in the `app_settings` table and are edited in **Admin → Settings**.
+> 💳 **Cashfree** collects the ₹50 booking fee and ₹100 membership. Register the webhook at **`{NEXT_PUBLIC_SITE_URL}/api/webhooks/cashfree`** (locally, tunnel it with ngrok). See [`CASHFREE_SETUP.md`](./CASHFREE_SETUP.md) for the full setup.
 
 > ⚠️ **Rotate the old anon key.** The original project committed an anon key to git history. Generate a fresh one in Supabase → Project Settings → API and update `.env.local` / Vercel.
 
@@ -115,21 +123,18 @@ supabase gen types typescript --project-id <ref> > src/integrations/supabase/typ
 
 ---
 
-## 💳 Manual UPI payments + verification
+## 💳 Cashfree payments (auto-confirm)
 
-No payment gateway. The flow:
+Payments go through **Cashfree hosted checkout** — no screenshots, no manual verification. The flow (see [`CASHFREE_SETUP.md`](./CASHFREE_SETUP.md) for the full guide):
 
-1. **Customer books** → the slot is held immediately as `pending_payment` (the booking row stores all form data, no details lost on refresh — they're mirrored to `sessionStorage`).
-2. A **payment screen** shows the studio's **QR code** + **UPI ID** (with a copy button) + the exact **amount** and instructions. The customer pays in any UPI app and **uploads a screenshot** (validated client- and server-side: image only, ≤ 5 MB).
-3. The screenshot is uploaded — via a **service-role server action** — to the private **`payment-proofs`** bucket, and the booking flips to `payment_uploaded` (awaiting verification). The slot stays held.
-4. **Admin → Payments** lists everything awaiting verification (newest first) with client/branch/date/slot/service/amount and the screenshot (signed URL, full-size). Admin **Verifies** (→ `verified`, slot finalized, `notifyCustomer()` stub fired) or **Rejects** with a reason (→ `rejected`, slot released).
-5. Memberships use the same flow; on verify the membership is created with the **10-day activation** rule.
+1. **Customer books** → the slot is held immediately as `pending_payment` (all form data lives on the booking row, so nothing is lost on refresh or when leaving for the payment page).
+2. A **Cashfree order** is created server-side and the customer is redirected to Cashfree's **hosted checkout** to pay the ₹50 fee.
+3. On return, **`/booking/confirm`** reconciles the order and, once Cashfree reports success, flips the booking to **`verified`** automatically. The **webhook** at `/api/webhooks/cashfree` (HMAC-verified with the secret key) is the authoritative backstop if the customer never returns.
+4. Memberships use the same flow and are created on confirmation.
 
-**Slot hold rule:** `pending_payment`, `payment_uploaded` and `verified` all hold a slot; `rejected`/`cancelled` free it. An abandoned `pending_payment` (never uploaded a proof, older than 30 min) is reclaimed when someone else books that exact slot.
+**Slot hold rule:** `pending_payment` and `verified` (plus the legacy `payment_uploaded`) hold a slot; `rejected`/`cancelled` free it. An abandoned `pending_payment` (fee never paid) is reclaimed after a short hold when someone else books that exact slot.
 
-**Configuring UPI:** set the **UPI ID / payee name / QR image** in **Admin → Settings** (stored in `app_settings`, no redeploy). The placeholder QR is [`public/upi-qr.svg`](./public/upi-qr.svg) — replace it (e.g. with `/upi-qr.png`) or point the setting at a full URL.
-
-**Security:** customers are anonymous, so uploads and reads go through service-role server actions and the bucket has **no public/anon policy** — proofs can't be listed or fetched directly; admin/manager view them via short-lived signed URLs. The unguessable appointment/payment UUID is the customer's upload capability.
+> ℹ️ `payment_uploaded` is a **legacy** status from the earlier manual-UPI flow — no longer written, kept only so historical rows render. The old `payment-proofs` bucket and UPI settings are likewise legacy.
 
 **Notifications** are a stub: [`src/lib/notify.ts`](./src/lib/notify.ts) `notifyCustomer()` logs intent — wire a real SMS/WhatsApp provider where marked `TODO(notify)`.
 
@@ -138,8 +143,8 @@ No payment gateway. The flow:
 ## ▲ Deploy to Vercel
 
 1. Push the branch and import the repo in Vercel (Next.js is auto-detected — no `vercel.json` needed).
-2. Add **all** environment variables (above) in Project → Settings → Environment Variables.
-3. Apply the migrations (incl. the `payment-proofs` bucket), set `NEXT_PUBLIC_SITE_URL` to your domain, then set your real UPI ID / QR in **Admin → Settings**.
+2. Add **all** environment variables (above, incl. the Cashfree keys) in Project → Settings → Environment Variables.
+3. Apply the migrations, set `NEXT_PUBLIC_SITE_URL` to your domain, switch `NEXT_PUBLIC_CASHFREE_MODE` to `production`, and register the webhook `{NEXT_PUBLIC_SITE_URL}/api/webhooks/cashfree` in the Cashfree dashboard.
 
 ---
 
@@ -158,8 +163,10 @@ src/
   app/                  # App Router: landing (/), /login, /admin, /manager, /staff
   components/
     ui/                 # shadcn/ui
-    booking/            # booking form + membership dialog + payment screen (QR/UPI/upload)
-    admin/              # dashboard panels (overview, payments, bookings, members, manage, settings, team, staff)
+    booking/            # booking form + membership dialog + Cashfree pay screen + confirm
+    dashboard/          # shared booking dialogs (extras, reassign, change-service) + widgets
+    admin/              # dashboard panels (overview, bookings, members, manage, settings, team, staff)
+    staff/              # staff dashboard: task list, earnings/commission, salary
     landing/            # reveal (motion), faq
   lib/
     supabase/           # browser / server / admin clients + middleware
@@ -178,4 +185,4 @@ middleware.ts           # session refresh + route protection
 
 - `npm run build` is clean (TypeScript strict + ESLint).
 - This is a migration from TanStack Start → Next.js; the original server logic is preserved for reference in `.migration-reference/` (gitignored).
-- Payments are **manual UPI + admin-verified screenshot** (the earlier Razorpay gateway was removed). The ₹50 fee gates booking confirmation and the 10-day membership activation is enforced after verification. Slot capacity is a hard **1 per slot** (the old peak-season “capacity 2” was dropped).
+- Payments are **Cashfree hosted checkout with auto-confirm** (the earlier manual-UPI screenshot flow, and before it Razorpay, were removed). The ₹50 fee gates booking confirmation; the member discount is settled in-store. Slot capacity is a hard **1 per slot**.
