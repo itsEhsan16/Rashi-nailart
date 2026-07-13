@@ -107,6 +107,23 @@ export function isSlotCutoffBlocked(appointmentDate: string, slot: string): bool
 }
 
 /**
+ * True if `slot`'s start instant on `appointmentDate` has already passed (IST).
+ * A same-day slot whose start time is in the past must never be bookable — the
+ * appointment would land in the past and never surface on the admin's day view
+ * (e.g. booking the 4:15 PM slot at 4:40 PM). `now` is injectable for testing and
+ * defaults to the current instant. Fails open (returns false) when the date/slot
+ * is unparseable so a malformed value can't silently block a valid booking.
+ */
+export function isSlotInPast(
+  appointmentDate: string,
+  slot: string,
+  now: number = Date.now(),
+): boolean {
+  const start = appointmentStartMs(appointmentDate, slot);
+  return Number.isNaN(start) ? false : start <= now;
+}
+
+/**
  * The `count` most recent months as "YYYY-MM", newest first, starting at `current`.
  *   recentMonths("2026-03", 3) -> ["2026-03", "2026-02", "2026-01"]
  * Pure string math (no Date) so it's safe anywhere and never slips across timezones.
