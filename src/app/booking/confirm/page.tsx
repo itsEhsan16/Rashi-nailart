@@ -1,12 +1,13 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { format } from "date-fns";
-import { CheckCircle2, Clock, XCircle } from "lucide-react";
+import { CheckCircle2, XCircle } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { confirmBookingByOrder } from "@/lib/actions/booking";
 import { ReceiptDownload } from "@/components/booking/receipt-download";
+import { PendingAutoRefresh } from "@/components/booking/pending-auto-refresh";
 import { slotStartLabel } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -87,26 +88,7 @@ export default async function BookingConfirmPage({
             </div>
           </Card>
         ) : result.status === "pending" ? (
-          <Card className="rounded-xl border-border/60 p-8 text-center shadow-elegant md:p-10">
-            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-amber-500/15 text-amber-600">
-              <Clock className="h-7 w-7" />
-            </div>
-            <h1 className="font-display text-2xl font-semibold">Payment processing…</h1>
-            <p className="mt-2 text-muted-foreground">
-              We haven&apos;t received confirmation of your payment yet. If you completed it, refresh
-              this page in a moment — your booking will confirm automatically.
-            </p>
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-              <Button asChild variant="outline">
-                <Link href={order_id ? `/booking/confirm?order_id=${order_id}` : "/#book"}>
-                  Refresh
-                </Link>
-              </Button>
-              <Button asChild variant="ghost">
-                <Link href="/#book">Back to booking</Link>
-              </Button>
-            </div>
-          </Card>
+          <PendingAutoRefresh orderId={order_id as string} />
         ) : (
           <Card className="rounded-xl border-border/60 p-8 text-center shadow-elegant md:p-10">
             <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-destructive/15 text-destructive">

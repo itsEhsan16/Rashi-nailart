@@ -17,7 +17,7 @@ import {
   synthEmail,
 } from "@/lib/cashfree";
 import { notifyCustomer } from "@/lib/notify";
-import { isSlotCutoffBlocked } from "@/lib/utils";
+import { isSlotCutoffBlocked, isSlotInPast } from "@/lib/utils";
 import {
   BRANCHES_TUPLE,
   createBookingInputSchema,
@@ -170,6 +170,16 @@ export async function createBooking(input: CreateBookingInput) {
     return {
       ok: false as const,
       error: "That time isn't available for this date. Please choose an earlier slot or another date.",
+    };
+  }
+
+  // Same-day guard: never accept a slot whose start time has already passed
+  // (interpreted in IST). Otherwise a customer booking the 4:15 PM slot at 4:40 PM
+  // lands an appointment in the past that never surfaces on the admin's day view.
+  if (isSlotInPast(d.appointment_date, d.time_slot)) {
+    return {
+      ok: false as const,
+      error: "That time has already passed. Please choose a later slot or another date.",
     };
   }
 
