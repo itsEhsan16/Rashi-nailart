@@ -23,6 +23,8 @@ const STAFF_PHOTO_BY_KEY: Record<string, string> = {
   fiza: "/stylist/Fiza.png",
   mansi: "/stylist/Mansi.jpeg",
   manshi: "/stylist/Mansi.jpeg",
+  "mansi 1": "/stylist/Mansi.jpeg",
+  "mansi 2": "/stylist/Mansi.jpeg",
   kumku: "/stylist/Kumkum.jpeg",
   kumkum: "/stylist/Kumkum.jpeg",
   asmita: "/stylist/Asmita.jpeg",
