@@ -1,3 +1,5 @@
+import withSerwistInit from "@serwist/next";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -21,4 +23,14 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+const withSerwist = withSerwistInit({
+  swSrc: "src/app/sw.ts",
+  swDest: "public/sw.js",
+  // Skip generating/registering the service worker in dev — it makes hot
+  // reload unreliable and there's no offline/precache story worth testing
+  // against a dev server that's already rebuilding constantly.
+  disable: process.env.NODE_ENV === "development",
+  reloadOnOnline: true,
+});
+
+export default withSerwist(nextConfig);
