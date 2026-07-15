@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { NavigationProgress } from "@/components/navigation-progress";
+import { InstallPrompt } from "@/components/pwa/install-prompt";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
@@ -36,6 +37,24 @@ export const metadata: Metadata = {
     description: "Premium nail art, gel polish & extensions across Mumbai.",
   },
   robots: { index: true, follow: true },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Rashi Nails",
+  },
+  other: {
+    // Next's `appleWebApp.capable` only emits the modern, unprefixed
+    // "mobile-web-app-capable" tag — iOS Safari still needs the legacy
+    // Apple-prefixed name to launch "Add to Home Screen" in standalone
+    // mode (no Safari chrome). Next has no dedicated field for it.
+    "apple-mobile-web-app-capable": "yes",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#A727AA",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({
@@ -59,6 +78,7 @@ export default function RootLayout({
         <NavigationProgress />
         {children}
         <Toaster richColors position="top-center" />
+        <InstallPrompt />
       </body>
     </html>
   );

@@ -9,6 +9,10 @@ out/
 build
 dist
 
+# serwist (generated service worker build output)
+public/sw*
+public/swe-worker*
+
 # logs / misc
 logs
 *.log
