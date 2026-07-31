@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Pencil, Trash2, Save, Scissors, Clock, MapPin } from "lucide-react";
+import { Plus, Pencil, Trash2, Save, Scissors, Sparkles, Clock, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,11 +25,15 @@ import {
   listServices,
   saveService,
   deleteService,
+  listAddons,
+  saveAddon,
+  deleteAddon,
   listTimeSlots,
   saveTimeSlot,
   deleteTimeSlot,
   listBranchesManage,
   saveBranch,
+  type AddonRow,
   type ServiceRow,
   type SlotRow,
   type BranchRow,
@@ -194,6 +198,210 @@ function ServicesManager() {
                 variant="ghost"
                 className="h-8 w-8 text-destructive hover:text-destructive"
                 onClick={() => onDelete(s)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// ───────────────────────────── Add-ons ──────────────────────────────────────
+// Rates for the in-studio extras staff charge on top of the booked service. Most
+// are per-nail, so `rate` is a unit price and the extras dialog multiplies it by
+// the count. Flat add-ons just turn `per_unit` off.
+function AddonsManager() {
+  const [rows, setRows] = useState<AddonRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<AddonRow | null>(null);
+  const [form, setForm] = useState({
+    name: "",
+    rate: "",
+    unit_label: "nail",
+    per_unit: true,
+    active: true,
+    sort_order: "0",
+  });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await listAddons();
+    setLoading(false);
+    if (res.ok) setRows(res.addons);
+    else toast.error(res.error);
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function openNew() {
+    setEditing(null);
+    setForm({
+      name: "",
+      rate: "",
+      unit_label: "nail",
+      per_unit: true,
+      active: true,
+      sort_order: String(rows.length + 1),
+    });
+    setOpen(true);
+  }
+  function openEdit(a: AddonRow) {
+    setEditing(a);
+    setForm({
+      name: a.name,
+      rate: String(a.rate),
+      unit_label: a.unit_label,
+      per_unit: a.per_unit,
+      active: a.active,
+      sort_order: String(a.sort_order),
+    });
+    setOpen(true);
+  }
+
+  async function onSave() {
+    const res = await saveAddon({
+      id: editing?.id,
+      name: form.name.trim(),
+      rate: Number(form.rate),
+      unit_label: form.unit_label.trim() || "nail",
+      per_unit: form.per_unit,
+      active: form.active,
+      sort_order: Number(form.sort_order),
+    });
+    if (!res.ok) return toast.error(res.error);
+    toast.success(editing ? "Add-on updated" : "Add-on added");
+    setOpen(false);
+    void load();
+  }
+  async function onDelete(a: AddonRow) {
+    if (!confirm(`Delete "${a.name}"? Extras already charged keep their price.`)) return;
+    const res = await deleteAddon({ id: a.id });
+    if (!res.ok) return toast.error(res.error);
+    toast.success("Add-on deleted");
+    void load();
+  }
+
+  return (
+    <Card className="rounded-xl p-5 shadow-soft">
+      <SectionHeader
+        title="Add-ons & rates"
+        description="Extras staff charge in-studio. Per-unit add-ons are multiplied by the count — e.g. ₹120 a nail × 10 nails."
+        actions={
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" onClick={openNew} className="bg-gradient-hero text-primary-foreground">
+                <Plus className="h-4 w-4 mr-1" /> Add
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{editing ? "Edit add-on" : "Add add-on"}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label>Name</Label>
+                  <Input
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="e.g. Nail Art"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label>Rate (₹)</Label>
+                    <Input
+                      type="number"
+                      value={form.rate}
+                      onChange={(e) => setForm({ ...form, rate: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Sort order</Label>
+                    <Input
+                      type="number"
+                      value={form.sort_order}
+                      onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+                  <Label htmlFor="perunit">Charged per unit (staff enter a count)</Label>
+                  <Switch
+                    id="perunit"
+                    checked={form.per_unit}
+                    onCheckedChange={(v) => setForm({ ...form, per_unit: v })}
+                  />
+                </div>
+                {form.per_unit && (
+                  <div className="space-y-1.5">
+                    <Label>Unit name</Label>
+                    <Input
+                      value={form.unit_label}
+                      onChange={(e) => setForm({ ...form, unit_label: e.target.value })}
+                      placeholder="nail"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Shown as &ldquo;₹{form.rate || "0"} / {form.unit_label || "nail"}&rdquo;.
+                    </p>
+                  </div>
+                )}
+                <div className="flex items-center justify-between rounded-lg border border-border/60 px-3 py-2">
+                  <Label htmlFor="addon-active">Active (offered to staff)</Label>
+                  <Switch
+                    id="addon-active"
+                    checked={form.active}
+                    onCheckedChange={(v) => setForm({ ...form, active: v })}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={onSave} className="bg-gradient-hero text-primary-foreground">
+                  <Save className="h-4 w-4 mr-1" /> Save
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      <div className="mt-4 space-y-2">
+        {loading && <ListSkeleton />}
+        {!loading && rows.length === 0 && (
+          <EmptyState
+            icon={<Sparkles className="h-6 w-6" />}
+            title="No add-ons yet"
+            description="Add the extras your artists charge for, like nail art priced per nail."
+          />
+        )}
+        {rows.map((a) => (
+          <div
+            key={a.id}
+            className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-4 py-3 transition-colors hover:border-border hover:bg-muted/40"
+          >
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 font-medium">
+                {a.name}
+                {!a.active && <Badge variant="outline">hidden</Badge>}
+              </div>
+              <div className="mt-0.5 text-sm text-muted-foreground">
+                ₹{a.rate}
+                {a.per_unit ? ` / ${a.unit_label}` : " flat"}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(a)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8 text-destructive hover:text-destructive"
+                onClick={() => onDelete(a)}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -400,12 +608,16 @@ export function ManagePanel() {
     <Tabs defaultValue="services" className="space-y-6">
       <TabsList>
         <TabsTrigger value="services">Services</TabsTrigger>
+        <TabsTrigger value="addons">Add-ons</TabsTrigger>
         <TabsTrigger value="slots">Time slots</TabsTrigger>
         <TabsTrigger value="branches">Branches</TabsTrigger>
         <TabsTrigger value="staff">Artists</TabsTrigger>
       </TabsList>
       <TabsContent value="services" className="mt-0">
         <ServicesManager />
+      </TabsContent>
+      <TabsContent value="addons" className="mt-0">
+        <AddonsManager />
       </TabsContent>
       <TabsContent value="slots" className="mt-0">
         <SlotsManager />

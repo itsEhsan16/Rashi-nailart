@@ -57,6 +57,9 @@ export type BookingRow = {
   payment_mode: PaymentMode | "upi" | null;
   /** Sum of staff-added extra line items (₹). Computed, not an appointments column. */
   extras_total: number;
+  /** Readable breakdown of those line items ("Nail Art ×10 @120; Hair spa @500") for
+   *  the CSV export. Empty when there are no extras, or on paths that skip detail. */
+  extras_detail: string;
   /** Artist the customer originally booked, if a manager reassigned them. null = never reassigned. */
   original_staff_name: string | null;
   /** Staff view only: true when this booking was reassigned AWAY from the viewer to
@@ -111,14 +114,18 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
 
   const { data, error } = await q;
   if (error) return { ok: false as const, error: error.message, bookings: [] as BookingRow[] };
-  let bookings = ((data as Omit<BookingRow, "extras_total" | "reassigned_away">[] | null) ?? []).map(
-    (b) => ({ ...b, extras_total: 0, reassigned_away: false }),
-  ) as BookingRow[];
+  let bookings = (
+    (data as Omit<BookingRow, "extras_total" | "extras_detail" | "reassigned_away">[] | null) ?? []
+  ).map((b) => ({ ...b, extras_total: 0, extras_detail: "", reassigned_away: false })) as BookingRow[];
 
-  // Attach each booking's extras total in one batched query (avoids N+1).
+  // Attach each booking's extras total + breakdown in one batched query (avoids N+1).
   if (bookings.length) {
-    const totals = await extrasTotalsFor(admin, bookings.map((b) => b.id));
-    bookings = bookings.map((b) => ({ ...b, extras_total: totals.get(b.id) ?? 0 }));
+    const summary = await extrasSummaryFor(admin, bookings.map((b) => b.id));
+    bookings = bookings.map((b) => ({
+      ...b,
+      extras_total: summary.get(b.id)?.total ?? 0,
+      extras_detail: summary.get(b.id)?.detail ?? "",
+    }));
   }
 
   // Staff view: redact client phone, and flag bookings reassigned away from them
@@ -162,6 +169,47 @@ async function extrasTotalsFor(admin: Admin, apptIds: string[]): Promise<Map<str
     totals.set(e.appointment_id, (totals.get(e.appointment_id) ?? 0) + (e.amount ?? 0));
   }
   return totals;
+}
+
+type ExtraLine = {
+  appointment_id: string;
+  label: string;
+  amount: number;
+  quantity: number;
+  unit_amount: number;
+};
+
+/** One extra, human-readable: "Nail Art ×10 @120" (count omitted when it's 1). */
+function formatExtraLine(e: ExtraLine): string {
+  return e.quantity > 1 ? `${e.label} ×${e.quantity} @${e.unit_amount}` : `${e.label} @${e.unit_amount}`;
+}
+
+/**
+ * Both the total AND a readable per-line breakdown per appointment, in one batched
+ * query. The breakdown is what makes the per-nail detail exportable — a bare total
+ * loses the rate and the count. Used by listBookings (which feeds the CSV export);
+ * revenue paths that only need money use `extrasTotalsFor`.
+ */
+async function extrasSummaryFor(
+  admin: Admin,
+  apptIds: string[],
+): Promise<Map<string, { total: number; detail: string }>> {
+  const out = new Map<string, { total: number; detail: string }>();
+  if (!apptIds.length) return out;
+  const { data } = await admin
+    .from("appointment_extras")
+    .select("appointment_id, label, amount, quantity, unit_amount")
+    .in("appointment_id", apptIds)
+    .order("created_at");
+  const lines = new Map<string, string[]>();
+  for (const e of (data as ExtraLine[] | null) ?? []) {
+    const cur = out.get(e.appointment_id) ?? { total: 0, detail: "" };
+    cur.total += e.amount ?? 0;
+    out.set(e.appointment_id, cur);
+    lines.set(e.appointment_id, [...(lines.get(e.appointment_id) ?? []), formatExtraLine(e)]);
+  }
+  for (const [id, parts] of lines) out.get(id)!.detail = parts.join("; ");
+  return out;
 }
 
 export async function completeBooking(input: { id: string }) {
@@ -232,12 +280,21 @@ export async function deleteBooking(input: { id: string }) {
 }
 
 // ─────────────────── Reassign a booking to another artist ────────────────────
-export type ReassignCandidate = { staffId: string; name: string };
+export type ReassignCandidate = {
+  staffId: string;
+  name: string;
+  /** Has a staff_schedules row for this weekday + slot. */
+  scheduled: boolean;
+  /** Already holds this branch/date/slot — the unique index makes the move impossible. */
+  busy: boolean;
+};
 
 /**
- * Artists in the booking's branch who could take over this slot: scheduled to
- * work that weekday+slot AND not already holding that slot, excluding the
- * currently-assigned artist. Used by the manager when a walk-in's artist is busy.
+ * Every artist in the booking's branch who could take over this slot, excluding
+ * the currently-assigned one. Deliberately NOT filtered by roster: the manager is
+ * standing in the studio and knows who is actually free, so an artist without a
+ * shift for this slot is offered with `scheduled: false` rather than hidden. Only
+ * `busy` is a hard stop, and that's enforced by uq_appointment_slot regardless.
  */
 export async function listReassignCandidates(input: { id: string }) {
   const profile = await requireRole(["admin", "manager"]);
@@ -279,6 +336,11 @@ export async function listReassignCandidates(input: { id: string }) {
     .in("staff_id", roster.map((s) => s.id));
   const scheduled = new Set(((sched as { staff_id: string }[] | null) ?? []).map((r) => r.staff_id));
 
+  // Expired holds must not make an artist look busy — now that busy artists are
+  // shown (and blocked) rather than silently dropped, a stale hold would be a
+  // visibly wrong reason. Same sweep listBookings does before reading.
+  await sweepStalePendingHolds();
+
   // Who already holds that exact slot (mirror of the uq_appointment_slot index)?
   const { data: occ } = await admin
     .from("appointments")
@@ -293,10 +355,18 @@ export async function listReassignCandidates(input: { id: string }) {
 
   const current = bk.staff_name.toLowerCase();
   const candidates = roster
-    .filter((s) => scheduled.has(s.id))
-    .filter((s) => !occupied.has(s.name.toLowerCase()))
     .filter((s) => s.name.toLowerCase() !== current)
-    .map((s) => ({ staffId: s.id, name: s.name }));
+    .map((s) => ({
+      staffId: s.id,
+      name: s.name,
+      scheduled: scheduled.has(s.id),
+      busy: occupied.has(s.name.toLowerCase()),
+    }))
+    // Free-and-rostered first, then off-shift (pickable), then busy (blocked).
+    .sort((a, b) => {
+      const rank = (c: ReassignCandidate) => (c.busy ? 2 : c.scheduled ? 0 : 1);
+      return rank(a) - rank(b) || a.name.localeCompare(b.name);
+    });
 
   return { ok: true as const, candidates };
 }
@@ -448,15 +518,36 @@ export async function changeBookingService(input: z.infer<typeof changeServiceIn
 }
 
 // ───────────────────── Appointment extras (in-studio add-ons) ────────────────
-export type ExtraRow = { id: string; label: string; amount: number; created_at: string };
+export type ExtraRow = {
+  id: string;
+  label: string;
+  amount: number;
+  quantity: number;
+  unit_amount: number;
+  unit_label: string | null;
+  addon_id: string | null;
+  created_at: string;
+};
+
+const EXTRA_COLUMNS = "id, label, amount, quantity, unit_amount, unit_label, addon_id, created_at";
 
 const addExtraInput = z.object({
   appointmentId: z.string().uuid(),
   label: z.string().trim().min(1, "Describe the extra").max(100),
-  amount: z.coerce.number().int("Whole rupees only").min(0).max(100000),
+  unitAmount: z.coerce.number().int("Whole rupees only").min(0).max(100000),
+  quantity: z.coerce.number().int("Whole units only").min(1, "At least 1").max(500).default(1),
+  addonId: z.string().uuid().optional(),
+  unitLabel: z.string().trim().min(1).max(20).optional(),
 });
 
-/** Staff/manager/admin add an extra line item to a booking they're scoped to. */
+/**
+ * Staff/manager/admin add an extra line item to a booking they're scoped to.
+ * Priced as rate × count (10 nails of nail art at ₹120 = ₹1,200); the stored
+ * `amount` is the line TOTAL, computed HERE — a client-supplied total is never
+ * trusted. When the line came from the catalog, the label and unit are resolved
+ * from the add-on server-side, but the rate stays overridable so staff can
+ * discount an individual booking.
+ */
 export async function addAppointmentExtra(input: z.infer<typeof addExtraInput>) {
   const profile = await requireRole(["admin", "manager", "staff"]);
   if (!profile) return UNAUTHORIZED;
@@ -465,10 +556,35 @@ export async function addAppointmentExtra(input: z.infer<typeof addExtraInput>) 
     return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
   const admin = createAdminClient();
   if (!(await scopedAppointmentMatch(admin, profile, parsed.data.appointmentId))) return UNAUTHORIZED;
+
+  let { label, unitLabel, quantity } = parsed.data;
+  const { addonId, unitAmount } = parsed.data;
+
+  if (addonId) {
+    const { data } = await admin
+      .from("service_addons")
+      .select("name, unit_label, per_unit")
+      .eq("id", addonId)
+      .eq("active", true)
+      .maybeSingle();
+    const addon = data as { name: string; unit_label: string; per_unit: boolean } | null;
+    if (!addon) return { ok: false as const, error: "That add-on is no longer available." };
+    label = addon.name;
+    unitLabel = addon.unit_label;
+    if (!addon.per_unit) quantity = 1; // flat charge — count is meaningless
+  }
+
+  const amount = unitAmount * quantity;
+  if (amount > 100000) return { ok: false as const, error: "That total is too large." };
+
   const { error } = await admin.from("appointment_extras").insert({
     appointment_id: parsed.data.appointmentId,
-    label: parsed.data.label,
-    amount: parsed.data.amount,
+    label,
+    amount,
+    quantity,
+    unit_amount: unitAmount,
+    unit_label: unitLabel ?? null,
+    addon_id: addonId ?? null,
     created_by: profile.id,
   });
   if (error) return { ok: false as const, error: error.message };
@@ -485,7 +601,7 @@ export async function listAppointmentExtras(input: { appointmentId: string }) {
     return { ...UNAUTHORIZED, extras: [] as ExtraRow[] };
   const { data, error } = await admin
     .from("appointment_extras")
-    .select("id, label, amount, created_at")
+    .select(EXTRA_COLUMNS)
     .eq("appointment_id", parsed.data.appointmentId)
     .order("created_at");
   if (error) return { ok: false as const, error: error.message, extras: [] as ExtraRow[] };
@@ -1032,6 +1148,93 @@ export async function deleteService(input: { id: string }) {
   return { ok: true as const };
 }
 
+// ────────────────────────── Add-on catalog (admin) ───────────────────────────
+// The rates staff charge for in-studio add-ons. `rate` is per `unit_label` when
+// per_unit (nail art at ₹120/nail); a flat charge otherwise. Mirrors the services
+// catalog above. The staff-facing reader is `listActiveAddons`.
+export type AddonRow = {
+  id: string;
+  name: string;
+  rate: number;
+  unit_label: string;
+  per_unit: boolean;
+  active: boolean;
+  sort_order: number;
+};
+
+const ADDON_COLUMNS = "id, name, rate, unit_label, per_unit, active, sort_order";
+
+export async function listAddons() {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return { ...UNAUTHORIZED, addons: [] as AddonRow[] };
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("service_addons").select(ADDON_COLUMNS).order("sort_order");
+  if (error) return { ok: false as const, error: error.message, addons: [] as AddonRow[] };
+  return { ok: true as const, addons: (data as AddonRow[] | null) ?? [] };
+}
+
+const addonInput = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(1).max(100),
+  rate: z.coerce.number().int().min(0).max(100000),
+  unit_label: z.string().trim().min(1).max(20),
+  per_unit: z.boolean(),
+  active: z.boolean(),
+  sort_order: z.coerce.number().int().min(0).default(0),
+});
+
+export async function saveAddon(input: z.infer<typeof addonInput>) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = addonInput.safeParse(input);
+  if (!parsed.success)
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  const { id, ...fields } = parsed.data;
+  const { error } = id
+    ? await admin.from("service_addons").update(fields).eq("id", id)
+    : await admin.from("service_addons").insert(fields);
+  if (error) {
+    if ((error as { code?: string }).code === "23505")
+      return { ok: false as const, error: "An add-on with that name already exists." };
+    return { ok: false as const, error: error.message };
+  }
+  return { ok: true as const };
+}
+
+/**
+ * Delete an add-on. Extras already charged keep their own snapshot of the label
+ * and rate (addon_id is ON DELETE SET NULL), so past bookings are unaffected.
+ */
+export async function deleteAddon(input: { id: string }) {
+  const profile = await requireRole(["admin"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = idSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "Invalid id" };
+  const admin = createAdminClient();
+  const { error } = await admin.from("service_addons").delete().eq("id", parsed.data.id);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
+/**
+ * Active add-ons for the in-studio extras picker. Available to any staff/manager/
+ * admin acting on their own bookings (unlike the admin-only `listAddons`) — the
+ * same split as listActiveServices vs listServices.
+ */
+export async function listActiveAddons() {
+  const profile = await requireRole(["admin", "manager", "staff"]);
+  if (!profile) return { ...UNAUTHORIZED, addons: [] as AddonRow[] };
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("service_addons")
+    .select(ADDON_COLUMNS)
+    .eq("active", true)
+    .order("sort_order");
+  if (error) return { ok: false as const, error: error.message, addons: [] as AddonRow[] };
+  return { ok: true as const, addons: (data as AddonRow[] | null) ?? [] };
+}
+
 // ─────────────────────────────── Time slots ─────────────────────────────────
 export type SlotRow = { id: string; label: string; active: boolean; sort_order: number };
 
@@ -1301,10 +1504,9 @@ export async function getStaffDetail(input: { staffId: string }) {
     .order("appointment_date", { ascending: false })
     .order("time_slot", { ascending: true });
   if (bErr) return { ok: false as const, error: bErr.message, detail: null };
-  let bookings = ((bData as Omit<BookingRow, "extras_total">[] | null) ?? []).map((b) => ({
-    ...b,
-    extras_total: 0,
-  })) as BookingRow[];
+  let bookings = ((bData as Omit<BookingRow, "extras_total" | "extras_detail">[] | null) ?? []).map(
+    (b) => ({ ...b, extras_total: 0, extras_detail: "" }),
+  ) as BookingRow[];
   if (bookings.length) {
     const totals = await extrasTotalsFor(admin, bookings.map((b) => b.id));
     bookings = bookings.map((b) => ({ ...b, extras_total: totals.get(b.id) ?? 0 }));
