@@ -61,6 +61,24 @@ export function slotStartMinutes(slot: string): number {
 }
 
 /**
+ * Slot labels in clock order (earliest start first), regardless of the order the
+ * rows came back in. `time_slots.sort_order` is a manual column, so a slot added
+ * later (e.g. a 10:30 AM slot appended after the evening ones) would otherwise
+ * show up at the bottom of the customer's dropdown. Sorting by the parsed start
+ * time keeps every list chronological without the admin maintaining sort_order.
+ * Ties (or unparseable labels) fall back to alphabetical so the order is stable.
+ */
+export function sortSlotsByStart<T>(items: T[], label: (item: T) => string): T[] {
+  return items
+    .slice()
+    .sort(
+      (a, b) =>
+        slotStartMinutes(label(a)) - slotStartMinutes(label(b)) ||
+        label(a).localeCompare(label(b)),
+    );
+}
+
+/**
  * Absolute epoch-ms of a slot's START, interpreting appointment_date + slot in IST
  * (the studio is in India: UTC+5:30, no DST). The offset is pinned so the result is
  * correct even on a UTC server (e.g. Vercel). Returns NaN if the date is unparseable
