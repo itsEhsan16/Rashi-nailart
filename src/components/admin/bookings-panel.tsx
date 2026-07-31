@@ -177,6 +177,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
         price: r.price,
         discount: r.discount_applied,
         extras: r.extras_total,
+        extras_detail: r.extras_detail,
         total: r.price + r.extras_total,
         staff: r.staff_name,
         reassigned_from: r.original_staff_name ?? "",

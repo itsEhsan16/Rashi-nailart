@@ -139,28 +139,40 @@ export type Database = {
       }
       appointment_extras: {
         Row: {
+          addon_id: string | null
           amount: number
           appointment_id: string
           created_at: string
           created_by: string | null
           id: string
           label: string
+          quantity: number
+          unit_amount: number
+          unit_label: string | null
         }
         Insert: {
+          addon_id?: string | null
           amount: number
           appointment_id: string
           created_at?: string
           created_by?: string | null
           id?: string
           label: string
+          quantity?: number
+          unit_amount: number
+          unit_label?: string | null
         }
         Update: {
+          addon_id?: string | null
           amount?: number
           appointment_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
           label?: string
+          quantity?: number
+          unit_amount?: number
+          unit_label?: string | null
         }
         Relationships: [
           {
@@ -168,6 +180,13 @@ export type Database = {
             columns: ["appointment_id"]
             isOneToOne: false
             referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointment_extras_addon_id_fkey"
+            columns: ["addon_id"]
+            isOneToOne: false
+            referencedRelation: "service_addons"
             referencedColumns: ["id"]
           },
         ]
@@ -411,6 +430,39 @@ export type Database = {
           role?: Database["public"]["Enums"]["user_role"]
           staff_name?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      service_addons: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          per_unit: boolean
+          rate: number
+          sort_order: number
+          unit_label: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          per_unit?: boolean
+          rate: number
+          sort_order?: number
+          unit_label?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          per_unit?: boolean
+          rate?: number
+          sort_order?: number
+          unit_label?: string
         }
         Relationships: []
       }
