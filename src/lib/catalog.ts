@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { SERVICES, TIME_SLOTS, BRANCHES } from "@/lib/salon-data";
+import { sortSlotsByStart } from "@/lib/utils";
 import { staffPhotoUrl, isMissingStaffPhotoColumn } from "@/lib/staff-photos";
 
 /** Staff for the catalog, tolerating photo_url not existing yet (additive migration). */
@@ -89,7 +90,12 @@ export async function getCatalog(): Promise<Catalog> {
       services: svcRows.length
         ? svcRows.map((s) => ({ name: s.name, price: s.price, isNailArt: s.is_nail_art }))
         : fb.services,
-      timeSlots: slotRows.length ? slotRows.map((s) => s.label) : fb.timeSlots,
+      // Always clock-ordered — sort_order is manual and a later-added morning slot
+      // would otherwise land at the bottom of the customer's time dropdown.
+      timeSlots: sortSlotsByStart(
+        slotRows.length ? slotRows.map((s) => s.label) : fb.timeSlots,
+        (label) => label,
+      ),
       branches: brRows.length
         ? brRows.map((b) => ({ name: b.name, address: b.address }))
         : fb.branches,

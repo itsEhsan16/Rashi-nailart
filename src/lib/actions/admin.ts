@@ -17,7 +17,7 @@ import {
   SERVICES,
   type PaymentMode,
 } from "@/lib/salon-data";
-import { monthBounds, daysInMonth } from "@/lib/utils";
+import { monthBounds, daysInMonth, sortSlotsByStart } from "@/lib/utils";
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { UPI_VPA_RE } from "@/lib/upi";
 import { isMissingStaffPhotoColumn } from "@/lib/staff-photos";
@@ -1044,7 +1044,10 @@ export async function listTimeSlots() {
     .select("id, label, active, sort_order")
     .order("sort_order");
   if (error) return { ok: false as const, error: error.message, slots: [] as SlotRow[] };
-  return { ok: true as const, slots: (data as SlotRow[] | null) ?? [] };
+  return {
+    ok: true as const,
+    slots: sortSlotsByStart((data as SlotRow[] | null) ?? [], (s) => s.label),
+  };
 }
 
 const slotInput = z.object({
@@ -1362,7 +1365,12 @@ export async function getSchedulableSlots() {
     .eq("active", true)
     .order("sort_order");
   if (error) return { ok: false as const, error: error.message, slots: [] as string[] };
-  return { ok: true as const, slots: ((data as { label: string }[] | null) ?? []).map((r) => r.label) };
+  return {
+    ok: true as const,
+    slots: sortSlotsByStart((data as { label: string }[] | null) ?? [], (r) => r.label).map(
+      (r) => r.label,
+    ),
+  };
 }
 
 export async function getStaffSchedule(input: { staffId: string }) {
