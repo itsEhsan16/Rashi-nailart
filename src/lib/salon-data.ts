@@ -72,9 +72,31 @@ export function isAcceptedProofFile(file: { type: string; name: string }): boole
   return false;
 }
 
-/** Abandoned pending_payment holds older than this are reclaimable. The customer
- *  has this long to pay the booking fee online before the slot frees. */
+/**
+ * Two hold windows, because a hold with a live Cashfree order behind it is a
+ * completely different thing from one without.
+ *
+ * PENDING_HOLD_MINUTES — no order exists yet. The customer is still on the form
+ * or looking at the pay screen; nothing of value is attached to the row, so an
+ * abandoned hold is deleted outright.
+ *
+ * PAYING_HOLD_MINUTES — a Cashfree order exists and the customer has been sent
+ * to the gateway. A UPI app-switch routinely takes minutes (collect mandates
+ * time out around 5, PSP settle lag adds a couple, and netbanking with an OTP
+ * step-up can reach 10), so this window is far longer. Rows in this state are
+ * NEVER deleted — see reclaimStaleHolds in actions/booking.ts. Deleting one
+ * destroys the only mapping from cashfree_order_id back to the customer, slot
+ * and amount, which is how a paid booking becomes unrecoverable.
+ */
 export const PENDING_HOLD_MINUTES = 2.5;
+export const PAYING_HOLD_MINUTES = 15;
+
+/**
+ * Written to `rejection_reason` when a hold carrying a live Cashfree order ages
+ * out. The reconcilers match on it to tell an expired-but-payable booking apart
+ * from one an admin genuinely rejected, so a late webhook can revive it.
+ */
+export const HOLD_EXPIRED_REASON = "Hold expired — booking fee not received";
 
 /**
  * How staff/manager/admin record that the in-store balance (service + extras)

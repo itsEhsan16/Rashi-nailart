@@ -66,9 +66,15 @@ export function SettingsPanel() {
   return (
     <Card className="max-w-2xl space-y-5 rounded-xl p-5 shadow-soft">
       <SectionHeader
-        title="UPI payment settings"
-        description="Shown to customers on the payment screen. Changes take effect immediately — no redeploy."
+        title="UPI payment settings (legacy — not in use)"
+        description="Left over from the old manual UPI flow. Customers now pay through Cashfree and nothing here is shown to them."
       />
+
+      <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+        <strong>Leave these blank.</strong> Publishing a UPI ID or QR code on the site looks like
+        collecting payments outside the payment gateway, which puts the Cashfree merchant account at
+        risk. Customer payments are handled entirely by Cashfree.
+      </p>
 
       <div className="space-y-1.5">
         <Label htmlFor="upi_id">UPI ID</Label>
@@ -95,7 +101,7 @@ export function SettingsPanel() {
         <div className="flex gap-2">
           <Input
             id="upi_qr_url"
-            placeholder="/QR.png or https://…"
+            placeholder="https://… (leave blank — unused)"
             value={form.upi_qr_url}
             onChange={(e) => setForm((f) => ({ ...f, upi_qr_url: e.target.value }))}
           />
@@ -122,8 +128,8 @@ export function SettingsPanel() {
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Upload an image (PNG/JPG/WebP, max 10 MB) or paste a path under <code>/public</code> (e.g.{" "}
-          <code>/QR.png</code>) or a full https URL. Uploading saves immediately.
+          Upload an image (PNG/JPG/WebP, max 10 MB) or paste a full https URL. Uploading saves
+          immediately.
         </p>
       </div>
 

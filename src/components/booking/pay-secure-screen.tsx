@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Loader2, ShieldCheck, AlertTriangle, Clock, Lock } from "lucide-react";
 import { toast } from "sonner";
 
@@ -132,6 +133,18 @@ export function PaySecureScreen({ amount, forLabel, holdExpiresAt, summaryLine, 
       <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
         <ShieldCheck className="h-3.5 w-3.5" /> Payments are processed securely by Cashfree. We never
         see your card or UPI credentials.
+      </p>
+      {/* The refund stance has to be reachable BEFORE payment, not only after. */}
+      <p className="mt-2 text-center text-xs text-muted-foreground">
+        By paying you agree to our{" "}
+        <Link href="/terms" className="underline underline-offset-2 hover:text-foreground">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/refund" className="underline underline-offset-2 hover:text-foreground">
+          Refund Policy
+        </Link>
+        . This fee is non-refundable.
       </p>
     </Card>
   );

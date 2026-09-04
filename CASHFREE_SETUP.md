@@ -180,7 +180,8 @@ On the Cashfree hosted checkout in sandbox, use Cashfree's test instruments. As 
 - [ ] Tamper a webhook body in the dashboard test tool → endpoint returns **401**.
 - [ ] Replay the same success webhook / refresh the confirm page → still exactly one confirmed
       booking (idempotent), one `payment_events` row per payment.
-- [ ] Pay-failure / user-drop → booking stays hidden and the slot frees after ~5 minutes.
+- [ ] Pay-failure / user-drop → booking stays hidden and the slot frees on the reclaim
+      schedule (see `PENDING_HOLD_MINUTES` / `PAYING_HOLD_MINUTES` in `src/lib/salon-data.ts`).
 - [ ] Membership: same end-to-end via `/membership/confirm`; the member then gets 50% off nail art.
 
 ---
@@ -208,7 +209,8 @@ On the Cashfree hosted checkout in sandbox, use Cashfree's test instruments. As 
 | Booking not confirming, no webhook locally | No tunnel — either add ngrok (§5) or rely on the return-page confirmation. |
 | Confirm page says "Payment processing…" | Order status is still `ACTIVE` (payment not completed). Refresh; or the payment failed/was dropped. |
 | DB error about unknown column `cashfree_order_id` | Migration not applied to `wvosbrierwuwjgiplksz` (§3). |
-| Slot got freed while a slow UPI payment was in progress | The 5-min hold sweep reclaimed it. `createBookingOrder` bumps `created_at` to extend the hold; a paid-but-orphaned order is journaled in `payment_events` for manual reconciliation (rare). |
+| Slot got freed while a slow UPI payment was in progress | Shouldn't happen any more. A hold with a Cashfree order is never deleted — after `PAYING_HOLD_MINUTES` it is expired in place to `rejected` + `HOLD_EXPIRED_REASON`, and `settleBookingPayment` revives it when the payment lands. If the slot was genuinely retaken meanwhile, the customer sees the "we've received your payment" screen and the event stays `processed = false` in `payment_events` for manual reconciliation. |
+| Customer says they paid but has no booking | `select * from payment_events where processed = false order by received_at desc` — that is the reconciliation queue. Cross-check the `order_id` in the Cashfree dashboard, then either rebook the slot manually or refund from the dashboard (there is no refund API integration). |
 
 ---
 
