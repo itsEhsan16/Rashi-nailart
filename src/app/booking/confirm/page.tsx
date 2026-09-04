@@ -1,11 +1,12 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { format } from "date-fns";
-import { CheckCircle2, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { confirmBookingByOrder } from "@/lib/actions/booking";
+import { confirmBookingByOrder, type BookingConfirmResult } from "@/lib/actions/booking";
+import { BUSINESS, mailtoHref, telHref } from "@/lib/business";
 import { ReceiptDownload } from "@/components/booking/receipt-download";
 import { PendingAutoRefresh } from "@/components/booking/pending-auto-refresh";
 import { slotStartLabel } from "@/lib/utils";
@@ -24,9 +25,9 @@ export default async function BookingConfirmPage({
   searchParams: Promise<{ order_id?: string }>;
 }) {
   const { order_id } = await searchParams;
-  const result = order_id
+  const result: BookingConfirmResult = order_id
     ? await confirmBookingByOrder({ orderId: order_id })
-    : ({ status: "error", error: "Missing payment reference." } as const);
+    : { status: "error", code: "invalid_reference" };
 
   return (
     <main className="min-h-screen bg-background px-4 py-16">
@@ -89,20 +90,77 @@ export default async function BookingConfirmPage({
           </Card>
         ) : result.status === "pending" ? (
           <PendingAutoRefresh orderId={order_id as string} />
+        ) : result.status === "needs_attention" ? (
+          /**
+           * We took the money but could not attach it to a slot. The one thing
+           * that must not happen here is the customer paying again, so this
+           * screen says so plainly, hands them the references we need to trace
+           * the payment, and offers no "book again" button.
+           */
+          <Card className="rounded-xl border-amber-500/40 p-8 shadow-elegant md:p-10">
+            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-amber-500/15 text-amber-600">
+              <AlertTriangle className="h-7 w-7" />
+            </div>
+            <h1 className="text-center font-display text-2xl font-semibold">
+              We&apos;ve received your payment
+            </h1>
+            <p className="mt-2 text-center text-muted-foreground">
+              {result.code === "slot_taken"
+                ? "Your payment went through, but the slot you chose was taken while you were paying. Nothing is lost — please contact us and we'll rebook you or refund you."
+                : "Your payment went through, but we couldn't attach it to a booking. Please contact us with the details below and we'll sort it out."}
+            </p>
+            <p className="mt-4 rounded-lg bg-amber-500/10 px-4 py-3 text-center text-sm font-medium text-amber-700 dark:text-amber-400">
+              Please do not pay again.
+            </p>
+            <dl className="mt-5 space-y-1.5 rounded-lg border border-border/60 bg-muted/40 px-4 py-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <dt className="text-muted-foreground">Order ID</dt>
+                <dd className="break-all text-right font-mono text-xs">{result.orderId}</dd>
+              </div>
+              {result.cfPaymentId ? (
+                <div className="flex justify-between gap-3">
+                  <dt className="text-muted-foreground">Payment ID</dt>
+                  <dd className="break-all text-right font-mono text-xs">{result.cfPaymentId}</dd>
+                </div>
+              ) : null}
+            </dl>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+              <Button asChild>
+                <a href={telHref()}>Call {BUSINESS.phone.display}</a>
+              </Button>
+              <Button asChild variant="outline">
+                <a href={mailtoHref(`Payment issue — order ${result.orderId}`)}>Email us</a>
+              </Button>
+            </div>
+          </Card>
         ) : (
           <Card className="rounded-xl border-border/60 p-8 text-center shadow-elegant md:p-10">
             <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-full bg-destructive/15 text-destructive">
               <XCircle className="h-7 w-7" />
             </div>
-            <h1 className="font-display text-2xl font-semibold">Payment not completed</h1>
+            <h1 className="font-display text-2xl font-semibold">
+              {result.status === "error" && result.code === "gateway_unreachable"
+                ? "We couldn't check your payment"
+                : "Payment not completed"}
+            </h1>
             <p className="mt-2 text-muted-foreground">
+              {/*
+                Never render a raw gateway or database string here — this page is
+                public, and a misconfigured environment would otherwise print the
+                names of missing secrets onto it. Codes map to fixed copy instead.
+              */}
               {result.status === "error"
-                ? result.error
-                : "Your payment didn't go through, so the booking wasn't confirmed. No charge was made — please try booking again."}
+                ? result.code === "gateway_unreachable"
+                  ? "We couldn't reach the payment gateway to confirm this. If money left your account, don't pay again — contact us and we'll check."
+                  : "That payment link isn't valid. If you were charged, contact us before trying again."
+                : "Your payment didn't go through, so the booking wasn't confirmed. If any amount was debited, your bank will reverse it — typically within 3–5 working days."}
             </p>
-            <div className="mt-6">
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
               <Button asChild>
                 <Link href="/#book">Book again</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <a href={telHref()}>Call {BUSINESS.phone.display}</a>
               </Button>
             </div>
           </Card>

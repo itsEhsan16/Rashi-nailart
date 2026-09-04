@@ -4,6 +4,8 @@ import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   BOOKING_FEE,
+  HOLD_EXPIRED_REASON,
+  PAYING_HOLD_MINUTES,
   PENDING_HOLD_MINUTES,
   SERVICES,
   SLOT_HOLDING_STATUSES,
@@ -17,6 +19,7 @@ import {
   synthEmail,
 } from "@/lib/cashfree";
 import { notifyCustomer } from "@/lib/notify";
+import { settleBookingPayment } from "@/lib/payments-core";
 import { isSlotCutoffBlocked, isSlotInPast } from "@/lib/utils";
 import {
   BRANCHES_TUPLE,
@@ -188,18 +191,16 @@ export async function createBooking(input: CreateBookingInput) {
 
   const { isMember } = await activeMember(admin, d.phone);
 
-  // Reclaim abandoned holds for this exact slot (never uploaded a proof, older
-  // than the hold window). payment_uploaded/verified holds are never reclaimed.
-  const staleCutoff = new Date(Date.now() - PENDING_HOLD_MINUTES * 60 * 1000).toISOString();
-  await admin
-    .from("appointments")
-    .delete()
-    .eq("branch", d.branch)
-    .eq("staff_name", d.staff_name)
-    .eq("appointment_date", d.appointment_date)
-    .eq("time_slot", d.time_slot)
-    .eq("payment_status", "pending_payment")
-    .lt("created_at", staleCutoff);
+  // Reclaim abandoned holds for this exact slot. This is the riskiest reclaim in
+  // the app — it is the path where a second customer takes a slot a first
+  // customer may still be paying for — so it goes through the same two-window
+  // helper as the global sweep and can never delete a hold that has a live order.
+  await reclaimStaleHolds(admin, {
+    branch: d.branch,
+    staff_name: d.staff_name,
+    appointment_date: d.appointment_date,
+    time_slot: d.time_slot,
+  });
 
   // Reserve the slot. uq_appointment_slot guarantees one non-cancelled booking.
   const { data: apptData, error: aErr } = await admin
@@ -245,9 +246,12 @@ export async function createBooking(input: CreateBookingInput) {
  * Create a Cashfree order for a held booking's ₹50 fee. The unguessable
  * appointment id (returned only to the booker) is the capability; the booking
  * must still be awaiting payment. The amount is fixed SERVER-SIDE (BOOKING_FEE)
- * — any client-supplied value is ignored. Also refreshes `created_at` so the
- * 5-minute stale-hold sweep can't reclaim the slot while the customer is away on
- * Cashfree's hosted page. Returns the payment session id for the checkout SDK.
+ * — any client-supplied value is ignored. Also refreshes `created_at` and sets
+ * `cashfree_order_id`, which together move the row onto the longer
+ * PAYING_HOLD_MINUTES window so the reclaim can't take the slot while the
+ * customer is away on Cashfree's hosted page. Returns the payment session id for
+ * the checkout SDK plus the new hold expiry, so the client countdown matches the
+ * server instead of still counting down from the original created_at.
  */
 export async function createBookingOrder(input: { appointmentId: string }) {
   const parsed = z.object({ appointmentId: z.string().uuid() }).safeParse(input);
@@ -283,12 +287,19 @@ export async function createBookingOrder(input: { appointmentId: string }) {
     });
     // Store the order and extend the hold. Guarded so a row that already advanced
     // (e.g. a fast webhook) is never disturbed.
-    await admin
+    const heldFrom = new Date();
+    const { error: holdErr } = await admin
       .from("appointments")
-      .update({ cashfree_order_id: orderId, created_at: new Date().toISOString() })
+      .update({ cashfree_order_id: orderId, created_at: heldFrom.toISOString() })
       .eq("id", appt.id)
       .eq("payment_status", "pending_payment");
-    return { ok: true as const, paymentSessionId: order.payment_session_id, orderId };
+    if (holdErr) console.error("[createBookingOrder] hold update failed:", holdErr.message);
+    return {
+      ok: true as const,
+      paymentSessionId: order.payment_session_id,
+      orderId,
+      holdExpiresAt: new Date(heldFrom.getTime() + PAYING_HOLD_MINUTES * 60 * 1000).toISOString(),
+    };
   } catch (e) {
     return {
       ok: false as const,
@@ -312,11 +323,25 @@ export type BookingReceipt = {
   paymentMethod: string | null;
 };
 
+/**
+ * Machine-readable outcome. The page maps these to safe copy; raw gateway and
+ * database strings are logged server-side only and never rendered — a
+ * misconfigured environment would otherwise print
+ * "set CASHFREE_APP_ID and CASHFREE_SECRET_KEY" onto a public page.
+ */
+export type BookingConfirmCode =
+  | "invalid_reference"
+  | "gateway_unreachable"
+  | "slot_taken"
+  | "orphaned_payment";
+
 export type BookingConfirmResult =
   | { status: "confirmed"; booking: BookingReceipt }
   | { status: "pending" }
   | { status: "failed"; reason?: string }
-  | { status: "error"; error: string };
+  /** Paid, but we could not attach it to a slot. A human must resolve it. */
+  | { status: "needs_attention"; code: BookingConfirmCode; orderId: string; cfPaymentId: string | null }
+  | { status: "error"; code: BookingConfirmCode };
 
 /**
  * Reconcile a booking against Cashfree after the customer returns from checkout.
@@ -329,7 +354,7 @@ export async function confirmBookingByOrder(input: { orderId: string }): Promise
   const orderId = String(input?.orderId ?? "");
   const parsed = parseOrderId(orderId);
   if (!parsed || parsed.kind !== "booking") {
-    return { status: "error", error: "Invalid payment reference." };
+    return { status: "error", code: "invalid_reference" };
   }
   const admin = createAdminClient();
 
@@ -337,28 +362,62 @@ export async function confirmBookingByOrder(input: { orderId: string }): Promise
   try {
     order = await getOrder(orderId);
   } catch (e) {
-    return { status: "error", error: e instanceof Error ? e.message : "Could not verify payment." };
+    console.error("[confirmBookingByOrder] getOrder failed:", e);
+    return { status: "error", code: "gateway_unreachable" };
   }
 
   if (order.order_status !== "PAID") {
-    if (order.order_status === "ACTIVE") return { status: "pending" };
+    if (order.order_status === "ACTIVE") {
+      // Still at the gateway. Push the hold out so the reclaim can't expire a
+      // booking the customer is actively paying for — PendingAutoRefresh polls
+      // this every few seconds, so the hold keeps extending while they're there.
+      const { error } = await admin
+        .from("appointments")
+        .update({ created_at: new Date().toISOString() })
+        .eq("id", parsed.recordId)
+        .eq("payment_status", "pending_payment");
+      if (error) console.error("[confirmBookingByOrder] hold extend failed:", error.message);
+      return { status: "pending" };
+    }
     return { status: "failed", reason: order.order_status };
   }
 
-  // Paid — enrich with the payment id/method and flip to verified idempotently.
+  // Paid. Attach it to the booking — idempotent, and it revives a hold that
+  // expired while the customer was at the gateway.
   const pay = await getSuccessfulPayment(orderId);
-  await admin
-    .from("appointments")
-    .update({
-      payment_status: "verified",
-      paid_at: new Date().toISOString(),
-      verified_at: new Date().toISOString(),
-      cf_payment_id: pay?.cfPaymentId ?? null,
-      payment_method: pay?.method ?? null,
-      rejection_reason: null,
-    })
-    .eq("id", parsed.recordId)
-    .eq("payment_status", "pending_payment");
+  const cfPaymentId = pay?.cfPaymentId ?? null;
+  const outcome = await settleBookingPayment(admin, parsed.recordId, {
+    cfPaymentId,
+    method: pay?.method ?? null,
+  });
+
+  if (outcome !== "verified") {
+    // Money was taken and we cannot show a confirmed booking. Journal it as
+    // unprocessed so it surfaces in the payment_events reconciliation queue,
+    // and tell the customer to call us rather than pay again.
+    console.error(
+      `[confirmBookingByOrder] paid but unsettled (${outcome}) order=${orderId} appointment=${parsed.recordId}`,
+    );
+    const { error } = await admin.from("payment_events").insert({
+      event_type: outcome === "missing" ? "RETURN_ORPHAN" : "RETURN_CONFLICT",
+      order_id: orderId,
+      cf_payment_id: cfPaymentId,
+      kind: "booking",
+      source: "return",
+      processed: false,
+      raw: { order_status: order.order_status, outcome },
+    });
+    // A duplicate cf_payment_id just means the webhook already journaled it.
+    if (error && (error as { code?: string }).code !== "23505") {
+      console.error("[confirmBookingByOrder] journal failed:", error.message);
+    }
+    return {
+      status: "needs_attention",
+      code: outcome === "missing" ? "orphaned_payment" : "slot_taken",
+      orderId,
+      cfPaymentId,
+    };
+  }
 
   const { data } = await admin
     .from("appointments")
@@ -381,7 +440,12 @@ export async function confirmBookingByOrder(input: { orderId: string }): Promise
         payment_method: string | null;
       }
     | null;
-  if (!row) return { status: "error", error: "Booking not found." };
+  if (!row) {
+    // settleBookingPayment said "verified", so the row existed a moment ago.
+    // Defensive only — treat it like any other paid-but-unattached payment.
+    console.error(`[confirmBookingByOrder] receipt row vanished order=${orderId}`);
+    return { status: "needs_attention", code: "orphaned_payment", orderId, cfPaymentId };
+  }
 
   // Journal the confirmation. The unique cf_payment_id index dedupes against the
   // webhook — a duplicate simply returns an error we ignore.
@@ -433,20 +497,76 @@ export async function cancelPendingBooking(input: { appointmentId: string }) {
   return { ok: true as const };
 }
 
+/** Optional slot scope — when given, only that one slot's holds are reclaimed. */
+type SlotScope = {
+  branch: CreateBookingInput["branch"];
+  staff_name: string;
+  appointment_date: string;
+  time_slot: string;
+};
+
 /**
- * Global reclaim of abandoned, never-proven holds: delete every `pending_payment`
- * row older than the hold window. This is the guaranteed cleanup (the same-slot
- * reclaim in createBooking only fires when someone rebooks that exact slot), so
- * an abandoned booking never lingers as a phantom that occupies a slot or shows
- * up in the dashboards. payment_uploaded/verified holds are never touched.
+ * Reclaim stale `pending_payment` holds, treating the two states differently.
+ * Both delete sites in this file go through here so they can never drift apart.
+ *
+ *   no order yet   → hard delete after PENDING_HOLD_MINUTES. Nothing of value is
+ *                    attached; the customer never reached the gateway.
+ *   order created  → NEVER deleted. After PAYING_HOLD_MINUTES the row is expired
+ *                    in place to `rejected` + HOLD_EXPIRED_REASON, which frees
+ *                    the slot (uq_appointment_slot and SLOT_HOLDING_STATUSES both
+ *                    exclude `rejected`) while KEEPING the cashfree_order_id →
+ *                    booking mapping. A late webhook or return-page reconcile can
+ *                    then revive it instead of finding nothing and silently
+ *                    dropping a payment we already took.
+ *
+ * payment_uploaded/verified holds are never touched.
  */
-export async function sweepStalePendingHolds() {
-  const admin = createAdminClient();
-  const staleCutoff = new Date(Date.now() - PENDING_HOLD_MINUTES * 60 * 1000).toISOString();
-  await admin
+async function reclaimStaleHolds(admin: Admin, scope?: SlotScope) {
+  const now = Date.now();
+  const pendingCutoff = new Date(now - PENDING_HOLD_MINUTES * 60 * 1000).toISOString();
+  const payingCutoff = new Date(now - PAYING_HOLD_MINUTES * 60 * 1000).toISOString();
+
+  // (a) Never reached the gateway — safe to remove outright.
+  let del = admin
     .from("appointments")
     .delete()
     .eq("payment_status", "pending_payment")
-    .lt("created_at", staleCutoff);
+    .is("cashfree_order_id", null)
+    .lt("created_at", pendingCutoff);
+  if (scope) {
+    del = del
+      .eq("branch", scope.branch)
+      .eq("staff_name", scope.staff_name)
+      .eq("appointment_date", scope.appointment_date)
+      .eq("time_slot", scope.time_slot);
+  }
+  const { error: delErr } = await del;
+  if (delErr) console.error("[reclaimStaleHolds] delete failed:", delErr.message);
+
+  // (b) Has a live order — expire in place, keep the row.
+  let exp = admin
+    .from("appointments")
+    .update({ payment_status: "rejected", rejection_reason: HOLD_EXPIRED_REASON })
+    .eq("payment_status", "pending_payment")
+    .not("cashfree_order_id", "is", null)
+    .lt("created_at", payingCutoff);
+  if (scope) {
+    exp = exp
+      .eq("branch", scope.branch)
+      .eq("staff_name", scope.staff_name)
+      .eq("appointment_date", scope.appointment_date)
+      .eq("time_slot", scope.time_slot);
+  }
+  const { error: expErr } = await exp;
+  if (expErr) console.error("[reclaimStaleHolds] expire failed:", expErr.message);
+}
+
+/**
+ * Global reclaim of abandoned holds, so one never lingers as a phantom that
+ * occupies a slot or shows up in the dashboards. Called from the slot picker and
+ * the staff/admin dashboards; see reclaimStaleHolds for the two-window rules.
+ */
+export async function sweepStalePendingHolds() {
+  await reclaimStaleHolds(createAdminClient());
   return { ok: true as const };
 }

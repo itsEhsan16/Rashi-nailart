@@ -1,11 +1,7 @@
-import Link from "next/link";
 import {
   Sparkles,
   Crown,
   MapPin,
-  LogIn,
-  Instagram,
-  Facebook,
   Star,
   Quote,
   CheckCircle2,
@@ -20,15 +16,17 @@ import path from "path";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Logo } from "@/components/logo";
+
 import { BookingForm } from "@/components/booking/booking-form";
 import { MembershipDialog } from "@/components/booking/membership-dialog";
 import { Reveal } from "@/components/landing/reveal";
 import { Faq } from "@/components/landing/faq";
 import { NailCard } from "@/components/landing/nail-card";
 import { HeroCollage } from "@/components/landing/hero-collage";
+import { SiteHeader, type HeaderLink } from "@/components/site/site-header";
+import { SiteFooter } from "@/components/site/site-footer";
 import { getCatalog } from "@/lib/catalog";
-import { MEMBERSHIP_PRICE, BOOKING_FEE, PENDING_HOLD_MINUTES } from "@/lib/salon-data";
+import { MEMBERSHIP_PRICE, BOOKING_FEE, PAYING_HOLD_MINUTES } from "@/lib/salon-data";
 
 function getNailCategories() {
   const dir = path.join(process.cwd(), "public", "nail-categories");
@@ -48,6 +46,14 @@ function getNailCategories() {
     .filter((c) => c.images.length > 0);
 }
 
+const HEADER_LINKS: HeaderLink[] = [
+  { href: "#services", label: "Services" },
+  { href: "#how", label: "How it works" },
+  { href: "#work", label: "Our work" },
+  { href: "#membership", label: "Membership" },
+  { href: "#branches", label: "Branches" },
+];
+
 const TESTIMONIALS = [
   { name: "Aanya S.", branch: "Bandra", text: "Booked in under a minute and my acrylics lasted weeks. The membership pays for itself!" },
   { name: "Priya M.", branch: "Vile Parle", text: "The loveliest studio — the artists are so detailed and the space is gorgeous." },
@@ -63,7 +69,7 @@ const HOW_IT_WORKS = [
   {
     icon: CreditCard,
     title: `Pay ₹${BOOKING_FEE} to lock it in`,
-    text: `A small booking fee holds your slot for ${PENDING_HOLD_MINUTES} minutes — pay securely online to confirm.`,
+    text: `A small booking fee holds your slot for ${PAYING_HOLD_MINUTES} minutes — pay securely online to confirm.`,
   },
   {
     icon: Sparkles,
@@ -85,7 +91,9 @@ export default async function HomePage() {
     description:
       "Premium nail art, gel polish and extensions across Vile Parle and Bandra, Mumbai.",
     url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
-    image: `${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/og.png`,
+    // public/og.png does not exist — point at an icon that does, so the
+    // structured data isn't advertising a 404.
+    image: `${process.env.NEXT_PUBLIC_SITE_URL ?? ""}/icons/icon-any-512.png`,
     areaServed: "Mumbai",
     address: branches.map((b) => ({
       "@type": "PostalAddress",
@@ -106,26 +114,7 @@ export default async function HomePage() {
     <div className="min-h-screen bg-background">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-border/50 bg-background/70 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-2.5">
-          <Link href="/" className="flex items-center gap-2">
-            <Logo priority className="h-12 w-auto" />
-          </Link>
-          <nav className="hidden items-center gap-7 text-sm text-muted-foreground md:flex">
-            <a href="#services" className="transition-colors hover:text-foreground">Services</a>
-            <a href="#how" className="transition-colors hover:text-foreground">How it works</a>
-            <a href="#work" className="transition-colors hover:text-foreground">Our work</a>
-            <a href="#membership" className="transition-colors hover:text-foreground">Membership</a>
-            <a href="#branches" className="transition-colors hover:text-foreground">Branches</a>
-          </nav>
-          <div className="flex items-center gap-2">
-            <Button asChild className="bg-gradient-hero text-primary-foreground shadow-soft">
-              <a href="#book">Book now</a>
-            </Button>
-          </div>
-        </div>
-      </header>
+      <SiteHeader links={HEADER_LINKS} />
 
       {/* Hero */}
       <section className="relative overflow-hidden">
@@ -166,7 +155,7 @@ export default async function HomePage() {
                 <Clock className="h-4 w-4 text-primary" /> Book in 60 seconds
               </span>
               <span className="inline-flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Secure UPI payments
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Secure online payments
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <MapPin className="h-4 w-4 text-primary" /> {branches.length} Mumbai studios
@@ -343,7 +332,7 @@ export default async function HomePage() {
               <ul className="mt-6 space-y-3 text-sm">
                 {[
                   "Live availability — no double bookings",
-                  `Slot held for ${PENDING_HOLD_MINUTES} minutes while you pay`,
+                  `Slot held for ${PAYING_HOLD_MINUTES} minutes while you pay`,
                   "Members get a discount, redeemed in-store",
                 ].map((line) => (
                   <li key={line} className="flex items-start gap-2.5">
@@ -377,48 +366,7 @@ export default async function HomePage() {
         </Reveal>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-border/50 bg-background/60">
-        <div className="mx-auto max-w-6xl px-6 py-10">
-          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <Logo className="h-9 w-auto" />
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted-foreground">
-              <a
-                href="https://www.instagram.com/rashinailartstudio_vileparle"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Instagram — Vile Parle"
-                className="inline-flex items-center gap-1.5 text-sm transition-colors hover:text-primary"
-              >
-                <Instagram className="h-5 w-5" /> Vile Parle
-              </a>
-              <a
-                href="https://www.instagram.com/rashinailartstudio_bandra"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Instagram — Bandra"
-                className="inline-flex items-center gap-1.5 text-sm transition-colors hover:text-primary"
-              >
-                <Instagram className="h-5 w-5" /> Bandra
-              </a>
-              <a href="#" aria-label="Facebook" className="transition-colors hover:text-primary">
-                <Facebook className="h-5 w-5" />
-              </a>
-            </div>
-          </div>
-          <div className="mt-6 flex flex-col items-center justify-between gap-2 text-xs text-muted-foreground sm:flex-row">
-            <p className="flex items-center gap-1.5">
-              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Simple, secure UPI payments
-            </p>
-            <div className="flex items-center gap-4">
-              <Link href="/login" className="flex items-center gap-1.5 transition-colors hover:text-foreground">
-                <LogIn className="h-3.5 w-3.5" /> Staff &amp; admin login
-              </Link>
-              <p>© {new Date().getFullYear()} Rashi Nail Art Studio. All rights reserved.</p>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }
