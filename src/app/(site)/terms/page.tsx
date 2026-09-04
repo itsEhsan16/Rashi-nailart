@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { PageHeading } from "../_page-heading";
-import { BUSINESS, RECONCILIATION_LINE, mailtoHref, officeLines, telHref } from "@/lib/business";
+import { BUSINESS, PAYMENT_COLLECTOR_LINE, mailtoHref, officeLines, telHref } from "@/lib/business";
 import {
   BOOKING_FEE_EXPLAINER,
   MEMBERSHIP_SUMMARY,
@@ -29,7 +29,7 @@ export default function TermsPage() {
       </p>
 
       <h2 id="who-we-are">1. Who we are</h2>
-      <p>{RECONCILIATION_LINE}</p>
+      <p>{PAYMENT_COLLECTOR_LINE}</p>
       <p>
         <strong>Registered office</strong>
         <br />

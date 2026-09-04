@@ -2,7 +2,12 @@ import Link from "next/link";
 import { CheckCircle2, Instagram, LogIn, Mail, Phone } from "lucide-react";
 
 import { Logo } from "@/components/logo";
-import { BUSINESS, RECONCILIATION_LINE, mailtoHref, telHref } from "@/lib/business";
+import {
+  BUSINESS,
+  PAYMENT_COLLECTOR_LINE_WITH_ADDRESS,
+  mailtoHref,
+  telHref,
+} from "@/lib/business";
 
 const LEGAL_LINKS = [
   { href: "/about", label: "About" },
@@ -67,7 +72,9 @@ export function SiteFooter() {
 
         {/* The registered legal name must be findable on the site — a reviewer
             comparing it against the KYC documents looks here or on /contact. */}
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">{RECONCILIATION_LINE}</p>
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          {PAYMENT_COLLECTOR_LINE_WITH_ADDRESS}
+        </p>
 
         <div className="mt-4 flex flex-col items-center justify-between gap-2 text-xs text-muted-foreground sm:flex-row">
           <p className="flex items-center gap-1.5">

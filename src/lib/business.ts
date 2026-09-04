@@ -11,9 +11,11 @@
  *     on exactly the pages that exist to display it.
  *
  * The trading brand and the registered entity are different names, deliberately:
- * the salon trades as "Rashi Nail Art Studio" while the registered proprietorship
- * is "M/S. DISHAA HAIR AND SKIN STUDIO". RECONCILIATION_LINE ties the two
- * together and must appear wherever legal identity is asserted.
+ * the salon trades as "Rashi Nail Art Studio" while the payments are collected by
+ * the registered proprietorship "M/S. DISHAA HAIR AND SKIN STUDIO".
+ * PAYMENT_COLLECTOR_LINE states that relationship and must appear wherever legal
+ * identity is asserted. Keep it scoped to the payment leg — see the note on the
+ * constant itself.
  */
 
 export const BUSINESS = {
@@ -57,13 +59,31 @@ export const BUSINESS = {
 } as const;
 
 /**
- * The sentence that ties the brand to the registered entity. Required wherever
- * legal identity is asserted — footer, /contact, /terms, /privacy, /refund — so
- * a reviewer comparing the site against the KYC documents finds both names.
+ * Names the entity that actually collects online payments, and where it is
+ * registered. Required wherever legal identity is asserted — footer, /contact,
+ * /terms, /privacy, /refund — so a reviewer comparing the site against the KYC
+ * documents finds the registered legal name, and so a customer knows who is
+ * taking their money before they pay.
+ *
+ * Deliberately phrased as "payments are collected by" rather than "is a brand
+ * operated by". The merchant account, PAN and settlement bank belong to the
+ * registered firm; that is a statement about the payment leg specifically, and
+ * it is the claim we can stand behind. Do not widen it into a claim about who
+ * owns or runs the studios unless that is separately true and documented.
  */
-export const RECONCILIATION_LINE =
-  `${BUSINESS.tradingName} is a brand operated by ${BUSINESS.legalName} ` +
+export const PAYMENT_COLLECTOR_LINE =
+  `Online payments for ${BUSINESS.tradingName} are collected by ${BUSINESS.legalName} ` +
   `(${BUSINESS.entityType}), proprietor ${BUSINESS.proprietor}.`;
+
+/**
+ * The same disclosure with the registered address appended. Use this only where
+ * the address is not already rendered nearby — the footer — so /contact,
+ * /terms and /privacy don't print it twice.
+ */
+export const PAYMENT_COLLECTOR_LINE_WITH_ADDRESS = `${PAYMENT_COLLECTOR_LINE.replace(
+  /\.$/,
+  "",
+)}, ${formattedOffice()}.`;
 
 /**
  * One date for every policy page AND the sitemap's `lastModified`, so the date a
