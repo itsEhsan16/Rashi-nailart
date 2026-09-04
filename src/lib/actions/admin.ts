@@ -20,6 +20,7 @@ import {
 import { monthBounds, daysInMonth, sortSlotsByStart } from "@/lib/utils";
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { UPI_VPA_RE } from "@/lib/upi";
+import { BUSINESS } from "@/lib/business";
 import { isMissingStaffPhotoColumn } from "@/lib/staff-photos";
 
 type Admin = ReturnType<typeof createAdminClient>;
@@ -626,7 +627,13 @@ export async function deleteAppointmentExtra(input: { id: string; appointmentId:
   return { ok: true as const };
 }
 
-// ─────────────────────────────── UPI settings ───────────────────────────────
+// ──────────────────────── UPI settings (LEGACY, unused) ─────────────────────
+// Left over from the manual UPI + screenshot flow that Cashfree replaced. No
+// customer-facing code reads these any more — the payment screen is pure
+// Cashfree. Kept only so historical rows stay readable and the admin screen
+// doesn't break; the stored values are blanked by the 20260904 migration.
+// Do NOT put a UPI ID or QR back here: a direct-UPI payment path visible on the
+// site reads to a payment aggregator as collecting outside the gateway.
 export type AppSettings = { upi_id: string; payee_name: string; upi_qr_url: string };
 
 export async function getAppSettings() {
@@ -640,26 +647,25 @@ export async function getAppSettings() {
     .maybeSingle();
   const settings = (data as AppSettings | null) ?? {
     upi_id: "",
-    payee_name: "Rashi Nail Art Studio",
-    upi_qr_url: "/QR.png",
+    payee_name: BUSINESS.tradingName,
+    upi_qr_url: "",
   };
   return { ok: true as const, settings };
 }
 
 const settingsInput = z.object({
-  // Empty is allowed (the pay button + copy row just hide); a non-empty value
-  // must be a well-formed VPA so it can't corrupt or inject into the UPI link.
+  // Empty is allowed and is the expected state; a non-empty value must still be
+  // a well-formed VPA so it can't corrupt or inject into a UPI link.
   upi_id: z
     .string()
     .trim()
     .max(120)
     .refine((v) => v === "" || UPI_VPA_RE.test(v), "Enter a valid UPI ID like name@bank"),
   payee_name: z.string().trim().min(1).max(120),
-  upi_qr_url: z
-    .string()
-    .trim()
-    .max(500)
-    .transform((v) => v || "/QR.png"),
+  // No default: the old `.transform(v => v || "/QR.png")` wrote a path back into
+  // the database whenever an admin cleared the field, which is how a deleted
+  // asset kept resurrecting as a broken image.
+  upi_qr_url: z.string().trim().max(500),
 });
 
 export async function saveAppSettings(input: z.infer<typeof settingsInput>) {
