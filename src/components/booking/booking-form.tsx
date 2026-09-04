@@ -36,7 +36,7 @@ import { PaySecureScreen } from "@/components/booking/pay-secure-screen";
 import { redirectToCheckout } from "@/lib/cashfree-checkout";
 import { BookingSteps } from "@/components/booking/booking-steps";
 import type { ServiceOption, BranchOption, StaffOption } from "@/lib/catalog";
-import { PENDING_HOLD_MINUTES } from "@/lib/salon-data";
+import { PAYING_HOLD_MINUTES, PENDING_HOLD_MINUTES } from "@/lib/salon-data";
 
 type Props = {
   services: ServiceOption[];
@@ -58,7 +58,7 @@ type Summary = {
 /** Persisted in localStorage so an in-flight payment survives the browser
  *  discarding the tab when the customer leaves for Cashfree's hosted page. The
  *  confirmation itself happens on /booking/confirm; this only lets a customer who
- *  returns without paying resume the "Pay" step while the 5-minute hold lasts. */
+ *  returns without paying resume the "Pay" step while the hold lasts. */
 type PendingPayment = {
   appointmentId: string;
   amount: number;
@@ -67,6 +67,14 @@ type PendingPayment = {
   summary: Summary;
   /** ms epoch when the slot was held — used to drop a stale hold on restore. */
   createdAt: number;
+  /**
+   * ms epoch when the hold actually expires, as told to us by the server after
+   * the Cashfree order was created. Starting payment moves the row onto the much
+   * longer PAYING_HOLD_MINUTES window, so without this the countdown would keep
+   * ticking down from `createdAt` and tell the customer their slot had gone while
+   * the server was still holding it.
+   */
+  holdExpiresAt?: number;
 };
 
 const PENDING_KEY = "rashi:pending-booking";
@@ -108,7 +116,11 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
       const raw = localStorage.getItem(PENDING_KEY);
       if (!raw) return;
       const saved = JSON.parse(raw) as PendingPayment;
-      const fresh = Date.now() - (saved.createdAt ?? 0) < PENDING_HOLD_MINUTES * 60 * 1000;
+      // Once an order exists the server holds the slot for the longer window, so
+      // honour the expiry it gave us rather than the short pre-order one.
+      const expiresAt =
+        saved.holdExpiresAt ?? (saved.createdAt ?? 0) + PENDING_HOLD_MINUTES * 60 * 1000;
+      const fresh = Date.now() < expiresAt;
       if (fresh) setPending(saved);
       else localStorage.removeItem(PENDING_KEY);
     } catch {
@@ -284,8 +296,13 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     if (!pending) return;
     const res = await createBookingOrder({ appointmentId: pending.appointmentId });
     if (!res.ok) throw new Error(res.error);
-    // Remember the order id so a return can reconcile even without the URL param.
-    persistPending({ ...pending, orderId: res.orderId });
+    // Remember the order id so a return can reconcile even without the URL param,
+    // and the server's real hold expiry so the countdown stops under-reporting.
+    persistPending({
+      ...pending,
+      orderId: res.orderId,
+      holdExpiresAt: new Date(res.holdExpiresAt).getTime(),
+    });
     await redirectToCheckout(res.paymentSessionId);
   }, [pending, persistPending]);
 
@@ -307,7 +324,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
         <PaySecureScreen
           amount={pending.amount}
           forLabel="booking fee"
-          holdExpiresAt={pending.createdAt + PENDING_HOLD_MINUTES * 60 * 1000}
+          holdExpiresAt={
+            pending.holdExpiresAt ?? pending.createdAt + PENDING_HOLD_MINUTES * 60 * 1000
+          }
           summaryLine={`${pending.summary.service} · ${pending.summary.date} · ${slotStartLabel(pending.summary.slot)}`}
           onPay={payNow}
         />
@@ -330,7 +349,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           <h3 className="font-display text-xl font-semibold">Your details</h3>
           <p className="mt-1 text-sm text-muted-foreground">
             Pick your branch, artist, date &amp; service. We&apos;ll hold your slot for{" "}
-            {PENDING_HOLD_MINUTES} minutes while you pay the ₹{bookingFee} fee to confirm.
+            {PAYING_HOLD_MINUTES} minutes while you pay the ₹{bookingFee} fee to confirm.
           </p>
         </div>
         {isMember && (
@@ -589,7 +608,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           )}
         </Button>
         <p className="text-xs text-center text-muted-foreground">
-          We&apos;ll hold your slot for {PENDING_HOLD_MINUTES} minutes while you pay the ₹{bookingFee}{" "}
+          We&apos;ll hold your slot for {PAYING_HOLD_MINUTES} minutes while you pay the ₹{bookingFee}{" "}
           booking fee securely online to confirm. This ₹{bookingFee} is deducted from your total.
         </p>
         </form>

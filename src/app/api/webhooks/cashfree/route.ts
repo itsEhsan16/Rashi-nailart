@@ -1,7 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { parseOrderId, verifyWebhookSignature } from "@/lib/cashfree";
-import { fulfillMembershipPayment, type MembershipPayment } from "@/lib/payments-core";
+import {
+  fulfillMembershipPayment,
+  settleBookingPayment,
+  type MembershipPayment,
+} from "@/lib/payments-core";
 import { notifyCustomer } from "@/lib/notify";
 
 // Needs the Node crypto module (HMAC) and the raw request body — not the edge runtime.
@@ -77,32 +81,44 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true });
   }
 
+  // Whether this payment actually landed on a booking/membership. Drives the
+  // `processed` flag below, which used to be stamped true unconditionally — so a
+  // payment we failed to attach looked handled and nothing ever surfaced it.
+  let settled = false;
+  let failureReason: string | null = null;
+
   try {
     if (type === "PAYMENT_SUCCESS_WEBHOOK" && mapping) {
       const paidAt = new Date().toISOString();
       const method = payment?.payment_group ?? null;
 
       if (mapping.kind === "booking") {
-        const { data } = await admin
-          .from("appointments")
-          .update({
-            payment_status: "verified",
-            paid_at: paidAt,
-            verified_at: paidAt,
-            cf_payment_id: cfPaymentId,
-            payment_method: method,
-            rejection_reason: null,
-          })
-          .eq("id", mapping.recordId)
-          .eq("payment_status", "pending_payment")
-          .select("client_name, phone")
-          .maybeSingle();
-        const row = data as { client_name: string; phone: string } | null;
-        if (row) {
-          await notifyCustomer({
-            phone: row.phone,
-            message: `Hi ${row.client_name}, your Rashi Nail Art Studio booking is confirmed. See you soon!`,
-          });
+        // Shared with the return page so both channels agree about what a
+        // zero-row update means. Revives a hold that expired while the customer
+        // was at the gateway; only a retaken slot or a missing row can fail.
+        const outcome = await settleBookingPayment(admin, mapping.recordId, {
+          cfPaymentId,
+          method,
+        });
+        settled = outcome === "verified";
+        if (!settled) {
+          failureReason = outcome;
+          console.error(
+            `[cashfree webhook] paid but unsettled (${outcome}) order=${orderId} appointment=${mapping.recordId}`,
+          );
+        } else {
+          const { data } = await admin
+            .from("appointments")
+            .select("client_name, phone")
+            .eq("id", mapping.recordId)
+            .maybeSingle();
+          const row = data as { client_name: string; phone: string } | null;
+          if (row) {
+            await notifyCustomer({
+              phone: row.phone,
+              message: `Hi ${row.client_name}, your Rashi Nail Art Studio booking is confirmed. See you soon!`,
+            });
+          }
         }
       } else {
         await admin
@@ -128,25 +144,45 @@ export async function POST(req: NextRequest) {
         const pay = data as MembershipPayment | null;
         if (pay) {
           await fulfillMembershipPayment(admin, pay);
+          settled = true;
           await notifyCustomer({
             phone: pay.phone ?? "",
             message: `Hi ${pay.client_name ?? "there"}, your Rashi membership is confirmed — benefits are active now. Ask us in-store about your member discount!`,
           });
+        } else {
+          failureReason = "missing";
+          console.error(
+            `[cashfree webhook] paid but no membership row order=${orderId} payment=${mapping.recordId}`,
+          );
         }
       }
-
-      await admin
-        .from("payment_events")
-        .update({ processed: true })
-        .eq("cf_payment_id", cfPaymentId as string);
     }
     // PAYMENT_FAILED_WEBHOOK / PAYMENT_USER_DROPPED_WEBHOOK: journaled only. The
-    // row stays pending_payment so the 5-minute sweep reclaims the slot and the
-    // customer can retry cleanly — no status write here.
-  } catch {
+    // row stays pending_payment so the reclaim frees the slot on the usual
+    // schedule and the customer can retry cleanly — no status write here.
+  } catch (e) {
     // Never fail the webhook on a downstream error; the return-page reconcile and
     // the journaled event provide a recovery path. Ack so Cashfree doesn't retry.
-    return NextResponse.json({ received: true });
+    failureReason = "exception";
+    console.error("[cashfree webhook] handler threw:", e);
+  }
+
+  // Record what actually happened. `processed: false` rows are the reconciliation
+  // queue: select * from payment_events where processed = false.
+  if (type === "PAYMENT_SUCCESS_WEBHOOK" && cfPaymentId) {
+    if (settled) {
+      const { error } = await admin
+        .from("payment_events")
+        .update({ processed: true })
+        .eq("cf_payment_id", cfPaymentId);
+      if (error) console.error("[cashfree webhook] processed flag update failed:", error.message);
+    } else {
+      // Leave processed at its inserted default of false so the row stays in the
+      // queue. The full payload is already in `raw`; the reason is in the logs.
+      console.error(
+        `[cashfree webhook] left unprocessed (${failureReason ?? "unknown"}) cf_payment_id=${cfPaymentId}`,
+      );
+    }
   }
 
   return NextResponse.json({ received: true });
