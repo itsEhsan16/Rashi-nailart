@@ -6,27 +6,43 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { BOOKING_FEE, MEMBERSHIP_PRICE, PAYING_HOLD_MINUTES } from "@/lib/salon-data";
+import { PAYMENT_FAILURE_SUMMARY, REFUND_SUMMARY } from "@/lib/policy-copy";
 
+/**
+ * Amounts and the refund stance come from shared constants, not hardcoded text —
+ * a reviewer reads the FAQ and the /refund page side by side, and the two
+ * contradicting each other is exactly the kind of thing that stalls a payment
+ * gateway application.
+ */
 const FAQS: { q: string; a: string }[] = [
   {
     q: "How do I book an appointment?",
-    a: "Pick your branch, artist, date, time and service in the booking form, then pay the ₹50 confirmation fee. Your slot is reserved the moment payment succeeds.",
+    a: `Pick your branch, artist, date, time and service in the booking form, then pay the ₹${BOOKING_FEE} confirmation fee. Your slot is reserved the moment payment succeeds.`,
   },
   {
-    q: "What is the ₹50 booking fee?",
-    a: "It's a small confirmation fee that secures your slot and reduces no-shows. Your service is paid at the studio after your appointment.",
+    q: `What is the ₹${BOOKING_FEE} booking fee?`,
+    a: `It's a small confirmation fee that secures your slot and reduces no-shows. It's deducted from your total — your service is paid at the studio after your appointment.`,
   },
   {
-    q: "How does the ₹100 membership work?",
-    a: "A one-year membership unlocks a member discount, redeemed in-store by our team. Benefits start the day you join and stay valid for a full year. We recognise you automatically by your phone number at booking.",
+    q: `How does the ₹${MEMBERSHIP_PRICE} membership work?`,
+    a: `A one-year membership unlocks a member discount, redeemed in-store by our team. Benefits start the day you join and stay valid for a full year. We recognise you automatically by your phone number at booking.`,
   },
   {
     q: "Can I reschedule or cancel?",
-    a: "No — there's no cancellation or rescheduling facility. Once your slot is booked it's confirmed and locked in, and the ₹50 confirmation fee is non-refundable, so please make sure you can attend before you book.",
+    a: REFUND_SUMMARY,
+  },
+  {
+    q: "I was charged but didn't get a booking. What now?",
+    a: `${PAYMENT_FAILURE_SUMMARY} Please don't pay again — contact us first and have your order ID ready.`,
+  },
+  {
+    q: "How long is my slot held while I pay?",
+    a: `${PAYING_HOLD_MINUTES} minutes from the moment you start payment. If payment isn't completed in that time the slot is released so someone else can book it.`,
   },
   {
     q: "Where are you located?",
-    a: "We have two studios across Mumbai — Vile Parle and Bandra.",
+    a: "We have two studios across Mumbai — Vile Parle and Bandra. Full addresses and phone numbers are on our Contact page.",
   },
 ];
 

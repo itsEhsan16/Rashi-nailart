@@ -14,6 +14,9 @@ export const config = {
      * external callback (Cashfree), so running the Supabase session refresh on it
      * is pointless and adds latency.
      */
-    "/((?!api/webhooks|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    // robots.txt / sitemap.xml / manifest / sw.js are crawler- and browser-facing
+    // and never need a session: refreshing one on those hits costs a Supabase auth
+    // round-trip and would set cookies on responses crawlers cache.
+    "/((?!api/webhooks|_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|sw.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml)$).*)",
   ],
 };

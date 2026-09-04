@@ -18,7 +18,17 @@ async function fetchStaffRows(supabase: Awaited<ReturnType<typeof createClient>>
 }
 
 export type ServiceOption = { name: string; price: number; isNailArt: boolean };
-export type BranchOption = { name: string; address: string | null };
+/**
+ * A bookable studio. `address`, `phone` and `mapUrl` are admin-editable (Admin →
+ * Manage → Branches) and may be unset, so every consumer must degrade gracefully
+ * — the seeded values are locality-only placeholders.
+ */
+export type BranchOption = {
+  name: string;
+  address: string | null;
+  phone: string | null;
+  mapUrl: string | null;
+};
 /** schedule[weekday] = slot labels this stylist works that weekday (0=Sun..6=Sat). */
 export type StaffOption = {
   name: string;
@@ -45,7 +55,7 @@ function fallback(staff: StaffOption[] = []): Catalog {
       isNailArt: /nail/i.test(s.name),
     })),
     timeSlots: [...TIME_SLOTS],
-    branches: BRANCHES.map((b) => ({ name: b, address: null })),
+    branches: BRANCHES.map((b) => ({ name: b, address: null, phone: null, mapUrl: null })),
     staff,
   };
 }
@@ -63,7 +73,7 @@ export async function getCatalog(): Promise<Catalog> {
       supabase.from("time_slots").select("label").eq("active", true).order("sort_order"),
       supabase
         .from("branches")
-        .select("name, address")
+        .select("name, address, phone, map_url")
         .eq("active", true)
         .order("sort_order"),
       fetchStaffRows(supabase),
@@ -72,7 +82,10 @@ export async function getCatalog(): Promise<Catalog> {
     const svcRows =
       (svcRes.data as { name: string; price: number; is_nail_art: boolean }[] | null) ?? [];
     const slotRows = (slotRes.data as { label: string }[] | null) ?? [];
-    const brRows = (brRes.data as { name: string; address: string | null }[] | null) ?? [];
+    const brRows =
+      (brRes.data as
+        | { name: string; address: string | null; phone: string | null; map_url: string | null }[]
+        | null) ?? [];
     const staffRows =
       (staffRes.data as
         | {
@@ -97,7 +110,12 @@ export async function getCatalog(): Promise<Catalog> {
         (label) => label,
       ),
       branches: brRows.length
-        ? brRows.map((b) => ({ name: b.name, address: b.address }))
+        ? brRows.map((b) => ({
+            name: b.name,
+            address: b.address,
+            phone: b.phone,
+            mapUrl: b.map_url,
+          }))
         : fb.branches,
       staff: staffRows.map((s) => {
         const schedule: Record<number, string[]> = {};
