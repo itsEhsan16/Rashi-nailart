@@ -4,7 +4,7 @@ import { Mail, MapPin, Phone } from "lucide-react";
 import { PageHeading } from "../_page-heading";
 import {
   BUSINESS,
-  RECONCILIATION_LINE,
+  PAYMENT_COLLECTOR_LINE,
   mailtoHref,
   officeLines,
   telHref,
@@ -131,7 +131,7 @@ export default async function ContactPage() {
           </span>
         ))}
       </p>
-      <p>{RECONCILIATION_LINE}</p>
+      <p>{PAYMENT_COLLECTOR_LINE}</p>
 
       <h2 id="social">Follow us</h2>
       <p>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { PageHeading } from "../_page-heading";
-import { BUSINESS, RECONCILIATION_LINE, mailtoHref, telHref } from "@/lib/business";
+import { BUSINESS, PAYMENT_COLLECTOR_LINE, mailtoHref, telHref } from "@/lib/business";
 import { BOOKING_FEE_EXPLAINER, NO_GST_NOTE } from "@/lib/policy-copy";
 import { getCatalog } from "@/lib/catalog";
 
@@ -47,7 +47,7 @@ export default async function AboutPage() {
       </p>
 
       <h2 id="business-details">Business details</h2>
-      <p>{RECONCILIATION_LINE}</p>
+      <p>{PAYMENT_COLLECTOR_LINE}</p>
       <p>
         Phone <a href={telHref()}>{BUSINESS.phone.display}</a> · Email{" "}
         <a href={mailtoHref()}>{BUSINESS.email}</a> ·{" "}

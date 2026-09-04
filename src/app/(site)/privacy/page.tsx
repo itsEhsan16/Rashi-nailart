@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { PageHeading } from "../_page-heading";
-import { BUSINESS, RECONCILIATION_LINE, mailtoHref, officeLines, telHref } from "@/lib/business";
+import { BUSINESS, PAYMENT_COLLECTOR_LINE, mailtoHref, officeLines, telHref } from "@/lib/business";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -16,7 +16,7 @@ export default function PrivacyPage() {
 
       <p>
         This policy explains what personal information we collect when you book with us, why we
-        collect it, and what we do with it. {RECONCILIATION_LINE}
+        collect it, and what we do with it. {PAYMENT_COLLECTOR_LINE}
       </p>
 
       <h2 id="what-we-collect">1. What we collect</h2>
