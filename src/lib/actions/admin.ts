@@ -102,6 +102,12 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
     // originally-booked stylist still sees where their customer went).
     const name = profile.staffName ?? "__none__";
     q = q.or(`staff_name.ilike.${name},original_staff_name.ilike.${name}`);
+    // staff.name is UNIQUE(name, branch), not globally — so two studios may
+    // legitimately employ artists of the same name. Without this, each would read
+    // the other's bookings, clients and earnings. Only scoped when the profile
+    // actually carries a branch: an artist whose branch was never set would
+    // otherwise see nothing at all, which is worse than the leak we're closing.
+    if (profile.branch) q = q.eq("branch", profile.branch);
   } else if (profile.role === "manager" && profile.branch) {
     q = q.eq("branch", profile.branch);
   } else if (f.branch) {
@@ -156,7 +162,12 @@ async function scopedAppointmentMatch(admin: Admin, profile: AuthProfile, id: st
   const row = data as { branch: string; staff_name: string } | null;
   if (!row) return false;
   if (profile.role === "manager") return row.branch === profile.branch;
-  return row.staff_name.toLowerCase() === (profile.staffName ?? "").toLowerCase();
+  // Name AND branch, for the same reason listBookings scopes by branch: this
+  // gates completeBooking, setBookingPaymentMode, the extras actions and
+  // changeBookingService, so a name match alone would let a same-named artist in
+  // another studio complete and re-price someone else's booking.
+  if (row.staff_name.toLowerCase() !== (profile.staffName ?? "").toLowerCase()) return false;
+  return !profile.branch || row.branch === profile.branch;
 }
 
 /** Sum appointment_extras.amount per appointment id in one batched query. */
@@ -812,6 +823,8 @@ export async function uploadStaffPhoto(formData: FormData) {
 /** Per-artist completed-work rollup (mirrors staff-metrics earnedAmount). */
 export type StaffEarning = {
   staffName: string;
+  /** Which studio these earnings were made at — two branches may share a name. */
+  branch: string;
   completed: number; // completed && verified bookings
   serviceRevenue: number; // Σ price
   extrasRevenue: number; // Σ extras
@@ -870,10 +883,14 @@ function aggregateRevenue(
     else if (a.payment_mode === "cash") cash += earned;
     else unrecorded += earned;
 
-    const key = a.staff_name?.trim() || "Unassigned";
+    // Keyed on branch + name: staff.name is unique per branch, not globally, so
+    // keying on the bare name merged two different artists into one earnings row
+    // (and produced a duplicate React key in StaffEarningsTable).
+    const staffName = a.staff_name?.trim() || "Unassigned";
+    const key = `${a.branch}|${staffName}`;
     const cur =
       byStaff.get(key) ??
-      { staffName: key, completed: 0, serviceRevenue: 0, extrasRevenue: 0, earnings: 0 };
+      { staffName, branch: a.branch, completed: 0, serviceRevenue: 0, extrasRevenue: 0, earnings: 0 };
     cur.completed += 1;
     cur.serviceRevenue += a.price ?? 0;
     cur.extrasRevenue += ex;
