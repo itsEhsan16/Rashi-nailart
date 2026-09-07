@@ -6,6 +6,19 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Join names as an English list: "A", "A and B", "A, B and C". Pass `conj` as "&"
+ * for compact chrome like the hero pill.
+ *
+ * Exists because two call sites used `.join(" and ")` / `.join(" & ")`, which read
+ * as "A and B and C" the moment a third studio opened.
+ */
+export function listAnd(items: readonly string[], conj = "and"): string {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} ${conj} ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} ${conj} ${items[items.length - 1]}`;
+}
+
+/**
  * Customer-facing text for a time slot: just the start time.
  *
  * Slots are stored as ranges ("11:45 AM – 1:15 PM") so the value stays in sync

@@ -1,5 +1,26 @@
-export const BRANCHES = ["Vile Parle", "Bandra"] as const;
+import type { Database } from "@/integrations/supabase/types";
+
+/**
+ * Bookable studios, in display order. THE single source of truth for the app's
+ * branch vocabulary: BRANCHES_TUPLE in @/lib/validations/booking re-exports this,
+ * so every z.enum() gate and every admin dropdown widen together. They used to be
+ * two independent literals and drifted.
+ *
+ * Adding a branch is three steps, in this order:
+ *   1. SQL   — alter type public.branch add value '<label>', in its own migration
+ *              (see supabase/migrations/20260908120000_branch_enum_borivali_w.sql)
+ *   2. here  — add the label
+ *   3. types — add the same label to Database["public"]["Enums"]["branch"] in
+ *              src/integrations/supabase/types.ts (hand-maintained, see README)
+ * BranchIsDbEnumLabel below turns a missed step 3 into a compile error rather
+ * than a PostgREST 400 on every .eq("branch", …) at runtime.
+ */
+export const BRANCHES = ["Vile Parle", "Bandra", "Borivali W"] as const;
 export type Branch = (typeof BRANCHES)[number];
+
+/** Compile-time proof that every branch we offer exists as a DB enum label. */
+type MustExtend<A extends B, B> = A;
+export type BranchIsDbEnumLabel = MustExtend<Branch, Database["public"]["Enums"]["branch"]>;
 
 export const TIME_SLOTS = [
   "11:45 AM – 1:15 PM",

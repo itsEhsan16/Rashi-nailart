@@ -27,6 +27,7 @@ import { SiteHeader, type HeaderLink } from "@/components/site/site-header";
 import { SiteFooter } from "@/components/site/site-footer";
 import { getCatalog } from "@/lib/catalog";
 import { MEMBERSHIP_PRICE, BOOKING_FEE, PAYING_HOLD_MINUTES } from "@/lib/salon-data";
+import { listAnd } from "@/lib/utils";
 
 function getNailCategories() {
   const dir = path.join(process.cwd(), "public", "nail-categories");
@@ -88,8 +89,10 @@ export default async function HomePage() {
     "@context": "https://schema.org",
     "@type": "HealthAndBeautyBusiness",
     name: "Rashi Nail Art Studio",
-    description:
-      "Premium nail art, gel polish and extensions across Vile Parle and Bandra, Mumbai.",
+    // Built from the live branch list so it never contradicts the visible page.
+    description: `Premium nail art, gel polish and extensions across ${listAnd(
+      branches.map((b) => b.name),
+    )}, Mumbai.`,
     url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
     // public/og.png does not exist — point at an icon that does, so the
     // structured data isn't advertising a 404.
@@ -127,7 +130,7 @@ export default async function HomePage() {
           <Reveal>
             <span className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-xs font-medium text-primary">
               <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              Now open in {branches.map((b) => b.name).join(" & ")}
+              Now open in {listAnd(branches.map((b) => b.name), "&")}
             </span>
             <h1 className="mt-6 font-display text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl md:text-6xl">
               Nail art that
@@ -272,7 +275,7 @@ export default async function HomePage() {
           <p className="text-sm font-medium uppercase tracking-widest text-primary">Visit us</p>
           <h2 className="mt-2 font-display text-3xl font-semibold md:text-4xl">Find your nearest studio</h2>
         </Reveal>
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {branches.map((b, i) => (
             <Reveal key={b.name} delay={i * 0.05}>
               <Card className="flex h-full items-start gap-4 p-6 shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-elegant">
@@ -362,7 +365,7 @@ export default async function HomePage() {
           <h2 className="mt-2 font-display text-3xl font-semibold md:text-4xl">Frequently asked</h2>
         </Reveal>
         <Reveal>
-          <Faq />
+          <Faq branches={branches.map((b) => b.name)} />
         </Reveal>
       </section>
 

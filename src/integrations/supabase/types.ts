@@ -669,7 +669,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      branch: "Vile Parle" | "Bandra"
+      branch: "Vile Parle" | "Bandra" | "Borivali W"
       user_role: "admin" | "manager" | "staff"
     }
     CompositeTypes: {
@@ -798,7 +798,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      branch: ["Vile Parle", "Bandra"],
+      branch: ["Vile Parle", "Bandra", "Borivali W"],
       user_role: ["admin", "manager", "staff"],
     },
   },

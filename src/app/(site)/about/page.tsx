@@ -5,6 +5,7 @@ import { PageHeading } from "../_page-heading";
 import { BUSINESS, PAYMENT_COLLECTOR_LINE, mailtoHref, telHref } from "@/lib/business";
 import { BOOKING_FEE_EXPLAINER, NO_GST_NOTE } from "@/lib/policy-copy";
 import { getCatalog } from "@/lib/catalog";
+import { listAnd } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -25,7 +26,7 @@ export default async function AboutPage() {
       </p>
       <p>
         We run {branches.length} {branches.length === 1 ? "studio" : "studios"} —{" "}
-        {branches.map((b) => b.name).join(" and ")} — and take appointments online so you can see
+        {listAnd(branches.map((b) => b.name))} — and take appointments online so you can see
         real availability and pick your artist rather than calling around.
       </p>
 

@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Rashi Nail Art Studio",
     short_name: "Rashi Nails",
     description:
-      "Book your salon moment at Rashi Nail Art Studio — Vile Parle & Bandra. Premium nail art, gel polish & extensions.",
+      "Book your salon moment at Rashi Nail Art Studio — Vile Parle, Bandra & Borivali W. Premium nail art, gel polish & extensions.",
     start_url: "/",
     scope: "/",
     display: "standalone",
