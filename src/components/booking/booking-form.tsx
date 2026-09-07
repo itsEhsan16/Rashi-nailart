@@ -103,6 +103,10 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
 
   const [isMember, setIsMember] = useState(false);
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  // The chosen artist has a dated day off. The catalog (and its `daysOff`) is
+  // fetched once on the server, so this live flag is what catches a date blocked
+  // after this page was rendered.
+  const [dayOff, setDayOff] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [pending, setPending] = useState<PendingPayment | null>(null);
@@ -177,6 +181,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   useEffect(() => {
     if (!branch || !staffName || !apptDate) {
       setBookedSlots([]);
+      setDayOff(false);
       return;
     }
     let active = true;
@@ -187,7 +192,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
       appointment_date: format(apptDate, "yyyy-MM-dd"),
     })
       .then((res) => {
-        if (active) setBookedSlots(res.slots);
+        if (!active) return;
+        setBookedSlots(res.slots);
+        setDayOff(res.dayOff);
       })
       .finally(() => {
         if (active) setLoadingSlots(false);
@@ -198,14 +205,24 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   }, [branch, staffName, apptDate]);
 
   const apptDow = apptDate ? apptDate.getDay() : null; // 0=Sun..6=Sat, local
+  // The chosen date as a local "YYYY-MM-DD" (date-fns `format` is local, exactly
+  // like formatLocalDate — never toISOString, which shifts the day in IST).
+  // Declared here, above `filteredStaff`, because useMemo runs in source order.
+  const apptDateStr = useMemo(
+    () => (apptDate ? format(apptDate, "yyyy-MM-dd") : null),
+    [apptDate],
+  );
 
-  // Stylists for the branch, narrowed to those who work the chosen weekday.
+  // Stylists for the branch, narrowed to those who work the chosen weekday and
+  // aren't on a dated day off — a day off overrides the whole weekly schedule.
   const filteredStaff = useMemo(() => {
     if (!branch) return [];
     const byBranch = staff.filter((s) => s.branch === branch);
-    if (apptDow === null) return byBranch; // no date yet → all branch stylists
-    return byBranch.filter((s) => (s.schedule[apptDow]?.length ?? 0) > 0);
-  }, [branch, staff, apptDow]);
+    if (apptDow === null || !apptDateStr) return byBranch; // no date yet → all branch stylists
+    return byBranch.filter(
+      (s) => (s.schedule[apptDow]?.length ?? 0) > 0 && !s.daysOff.includes(apptDateStr),
+    );
+  }, [branch, staff, apptDow, apptDateStr]);
 
   // The chosen stylist (for store number, schedule, etc.).
   const selectedStaff = useMemo(
@@ -224,6 +241,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
   );
 
   // If the chosen stylist no longer matches the date's availability, reset it.
+  // (This also covers an artist dropped by `daysOff` above — no extra reset needed.)
   useEffect(() => {
     if (staffName && !filteredStaff.some((s) => s.name === staffName)) {
       setValue("staff_name", "");
@@ -231,13 +249,15 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
     }
   }, [filteredStaff, staffName, setValue]);
 
+  // The day off may have been added after this page was rendered, so a time could
+  // already be picked — drop it so a stale selection can't be submitted.
+  useEffect(() => {
+    if (dayOff) setValue("time_slot", "");
+  }, [dayOff, setValue]);
+
   const selectedService = useMemo(
     () => services.find((s) => s.name === serviceName),
     [services, serviceName],
-  );
-  const apptDateStr = useMemo(
-    () => (apptDate ? format(apptDate, "yyyy-MM-dd") : null),
-    [apptDate],
   );
   const slotsReady = Boolean(branch && staffName && apptDate);
   const noStylistsForDate = Boolean(branch && apptDate && filteredStaff.length === 0);
@@ -265,6 +285,7 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
           appointment_date: dateStr,
         });
         setBookedSlots(r.slots);
+        setDayOff(r.dayOff);
         return;
       }
 
@@ -503,7 +524,9 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
             )}
           />
           {noStylistsForDate && (
-            <p className="text-sm text-muted-foreground">No slots available for this date.</p>
+            <p className="text-sm text-muted-foreground">
+              No artists are available on this date. Please choose another date.
+            </p>
           )}
           {errors.staff_name && (
             <p className="text-xs text-destructive">{errors.staff_name.message}</p>
@@ -532,7 +555,12 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                       const cutoffLabel = apptDateStr ? slotCutoffLabel(apptDateStr, t) : null;
                       const past = apptDateStr ? isSlotInPast(apptDateStr, t) : false;
                       return (
-                        <SelectItem key={t} value={t} disabled={taken || past || Boolean(cutoffLabel)}>
+                        <SelectItem
+                          key={t}
+                          value={t}
+                          // A day off blocks the whole date, so nothing here is bookable.
+                          disabled={dayOff || taken || past || Boolean(cutoffLabel)}
+                        >
                           {slotStartLabel(t)}
                           {taken ? " · booked" : past ? " · passed" : cutoffLabel ? ` · ${cutoffLabel}` : ""}
                         </SelectItem>
@@ -542,6 +570,11 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
                 </Select>
               )}
             />
+            {dayOff && (
+              <p className="text-sm text-muted-foreground">
+                This artist isn&apos;t working on this date — please pick another date or artist.
+              </p>
+            )}
             {errors.time_slot && (
               <p className="text-xs text-destructive">{errors.time_slot.message}</p>
             )}

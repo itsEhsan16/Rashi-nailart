@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, Loader2, Mail, Store, Upload } from "lucide-react";
+import { ArrowLeft, CalendarOff, CheckCircle2, Loader2, Mail, Store, Upload } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -35,6 +35,17 @@ import {
 
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** How many day-off chips to render before collapsing the rest into a "+N more". */
+const DAYS_OFF_SHOWN = 12;
+
+/**
+ * "14 Nov" for a date in the current year, "14 Nov 2027" beyond it. Parsed at LOCAL
+ * midnight so an IST day never slides back to the previous date.
+ */
+function dayOffLabel(isoDate: string, currentYear: number): string {
+  const d = new Date(`${isoDate}T00:00:00`);
+  return format(d, d.getFullYear() === currentYear ? "d MMM" : "d MMM yyyy");
+}
 
 /**
  * The admin/manager employee page: a stylist's photo (with upload), lifetime
@@ -62,6 +73,7 @@ export function StaffDetail({
   const fileRef = useRef<HTMLInputElement>(null);
   const now = useMemo(() => Date.now(), []);
   const currentMonth = useMemo(() => formatLocalDate(new Date(now)).slice(0, 7), [now]);
+  const currentYear = Number(currentMonth.slice(0, 4));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,6 +123,11 @@ export function StaffDetail({
     for (const list of map.values()) list.sort((a, b) => slotStartMinutes(a) - slotStartMinutes(b));
     return map;
   }, [detail]);
+  // Dated overrides that beat the weekly grid above. The server already trims these
+  // to today onward and sorts them, so we only cap how many chips we draw.
+  const daysOff = detail?.upcomingDaysOff ?? [];
+  const shownDaysOff = daysOff.slice(0, DAYS_OFF_SHOWN);
+  const moreDaysOff = daysOff.length - shownDaysOff.length;
 
   return (
     <div className="space-y-6">
@@ -209,7 +226,7 @@ export function StaffDetail({
           </section>
 
           <section className="space-y-3">
-            <h3 className="text-sm font-semibold">Weekly schedule</h3>
+            <h3 className="text-sm font-semibold">Weekly schedule &amp; days off</h3>
             <Card className="rounded-xl p-4 shadow-soft">
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {DAY_NAMES.map((d, i) => {
@@ -230,6 +247,30 @@ export function StaffDetail({
                   );
                 })}
               </div>
+            </Card>
+
+            {/* Blocked calendar dates — these override the weekday grid above, so an
+                artist listed here is off even on a day they normally work. */}
+            <Card className="rounded-xl p-4 shadow-soft">
+              <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <CalendarOff className="h-3.5 w-3.5" /> Upcoming days off
+              </div>
+              {daysOff.length === 0 ? (
+                <p className="mt-2 text-sm text-muted-foreground">No days off scheduled.</p>
+              ) : (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {shownDaysOff.map((d) => (
+                    <Badge key={d} variant="secondary" className="font-normal">
+                      {dayOffLabel(d, currentYear)}
+                    </Badge>
+                  ))}
+                  {moreDaysOff > 0 && (
+                    <Badge variant="outline" className="font-normal text-muted-foreground">
+                      +{moreDaysOff} more
+                    </Badge>
+                  )}
+                </div>
+              )}
             </Card>
           </section>
 

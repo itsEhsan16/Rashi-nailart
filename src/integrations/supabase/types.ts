@@ -626,6 +626,41 @@ export type Database = {
           },
         ]
       }
+      staff_time_off: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          off_date: string
+          reason: string | null
+          staff_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          off_date: string
+          reason?: string | null
+          staff_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          off_date?: string
+          reason?: string | null
+          staff_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_time_off_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

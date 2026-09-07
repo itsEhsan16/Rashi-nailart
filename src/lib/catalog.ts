@@ -1,20 +1,62 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { SERVICES, TIME_SLOTS, BRANCHES } from "@/lib/salon-data";
-import { sortSlotsByStart } from "@/lib/utils";
+import { formatLocalDate, sortSlotsByStart } from "@/lib/utils";
 import { staffPhotoUrl, isMissingStaffPhotoColumn } from "@/lib/staff-photos";
+import { isMissingTimeOffTable } from "@/lib/staff-time-off";
 
 /** Staff for the catalog, tolerating photo_url not existing yet (additive migration). */
 async function fetchStaffRows(supabase: Awaited<ReturnType<typeof createClient>>) {
   const withPhoto: string =
-    "name, branch, store_number, photo_url, staff_schedules(day_of_week, time_slot)";
+    "id, name, branch, store_number, photo_url, staff_schedules(day_of_week, time_slot)";
   const withoutPhoto: string =
-    "name, branch, store_number, staff_schedules(day_of_week, time_slot)";
+    "id, name, branch, store_number, staff_schedules(day_of_week, time_slot)";
   const res = await supabase.from("staff").select(withPhoto).order("name");
   if (isMissingStaffPhotoColumn(res.error)) {
     return await supabase.from("staff").select(withoutPhoto).order("name");
   }
   return res;
+}
+
+/**
+ * Dated days off from today onward, grouped `staff.id` → ascending "YYYY-MM-DD".
+ *
+ * Deliberately isolated from the rest of the catalog: `staff_time_off` may not
+ * exist yet in production (migration not applied) and even a live read failure
+ * must not take the services/branches/staff lists down with it. Every fault
+ * degrades to "nobody is off" — the customer just sees the weekly schedule, and
+ * createBooking still refuses a blocked date server-side.
+ */
+async function fetchDaysOff(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Map<string, string[]>> {
+  const byStaff = new Map<string, string[]>();
+  try {
+    // Calendar-local today, never toISOString().slice(0,10) — off_date is a plain
+    // calendar date, same as appointment_date. Erring a day early is harmless
+    // (a past date isn't bookable); dropping today's block would not be.
+    const { data, error } = await supabase
+      .from("staff_time_off")
+      .select("staff_id, off_date")
+      .gte("off_date", formatLocalDate(new Date()))
+      .order("off_date");
+    if (error) {
+      // A missing table just means the feature isn't live yet; anything else is
+      // a real fault worth logging, but never worth failing the catalog over.
+      if (!isMissingTimeOffTable(error)) {
+        console.error("[catalog] staff_time_off read failed:", error.message);
+      }
+      return byStaff;
+    }
+    for (const r of (data as { staff_id: string; off_date: string }[] | null) ?? []) {
+      const dates = byStaff.get(r.staff_id);
+      if (dates) dates.push(r.off_date);
+      else byStaff.set(r.staff_id, [r.off_date]);
+    }
+  } catch (e) {
+    console.error("[catalog] staff_time_off read threw:", e);
+  }
+  return byStaff;
 }
 
 export type ServiceOption = { name: string; price: number; isNailArt: boolean };
@@ -37,6 +79,11 @@ export type StaffOption = {
   /** Public path to the stylist's bundled photo, or null (→ initials fallback). */
   photoUrl: string | null;
   schedule: Record<number, string[]>;
+  /**
+   * ISO "YYYY-MM-DD" dates (today onward, ascending) this artist is off —
+   * OVERRIDES `schedule`: on one of these dates they work no slot at all.
+   */
+  daysOff: string[];
 };
 
 export type Catalog = {
@@ -64,7 +111,7 @@ function fallback(staff: StaffOption[] = []): Catalog {
 export async function getCatalog(): Promise<Catalog> {
   try {
     const supabase = await createClient();
-    const [svcRes, slotRes, brRes, staffRes] = await Promise.all([
+    const [svcRes, slotRes, brRes, staffRes, daysOffByStaff] = await Promise.all([
       supabase
         .from("services")
         .select("name, price, is_nail_art")
@@ -77,6 +124,9 @@ export async function getCatalog(): Promise<Catalog> {
         .eq("active", true)
         .order("sort_order"),
       fetchStaffRows(supabase),
+      // Never rejects — see fetchDaysOff. Safe to sit inside this Promise.all
+      // without dragging the whole catalog into fallback().
+      fetchDaysOff(supabase),
     ]);
 
     const svcRows =
@@ -89,6 +139,7 @@ export async function getCatalog(): Promise<Catalog> {
     const staffRows =
       (staffRes.data as
         | {
+            id: string;
             name: string;
             branch: string;
             store_number: string | null;
@@ -126,6 +177,7 @@ export async function getCatalog(): Promise<Catalog> {
           storeNumber: s.store_number,
           photoUrl: s.photo_url ?? staffPhotoUrl(s.name),
           schedule,
+          daysOff: daysOffByStaff.get(s.id) ?? [],
         };
       }),
     };
