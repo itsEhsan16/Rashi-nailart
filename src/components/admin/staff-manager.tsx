@@ -24,6 +24,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StaffDaysOff } from "@/components/admin/staff-days-off";
 import { SectionHeader } from "@/components/dashboard/page-header";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { cn } from "@/lib/utils";
@@ -43,6 +45,9 @@ type BranchName = (typeof BRANCHES)[number];
 
 /** index = day_of_week (JS getDay(): 0=Sun .. 6=Sat) */
 const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** Tabs inside the schedule dialog: the weekly matrix, or the dated days-off calendar. */
+type SchedTab = "weekly" | "off";
 
 export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
   const [rows, setRows] = useState<StaffRow[]>([]);
@@ -64,6 +69,7 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
   const [sel, setSel] = useState<Record<number, string[]>>({});
   const [schedLoading, setSchedLoading] = useState(false);
   const [schedSaving, setSchedSaving] = useState(false);
+  const [schedTab, setSchedTab] = useState<SchedTab>("weekly");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,10 +141,19 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
     return [...schedSlots, ...extras];
   }, [schedSlots, sel]);
 
+  // Weekdays the artist works, taken from the UNSAVED editor state on purpose: the
+  // days-off calendar should mute dates against what the admin is looking at right now.
+  const workingWeekdays = useMemo(
+    () => DOW.map((_, day) => day).filter((day) => (sel[day] ?? []).length > 0),
+    [sel],
+  );
+
   async function openSchedule(s: StaffRow) {
     setSchedStaff(s);
     setSel({});
     setSchedSlots([]);
+    // Reopening for another artist must never land on the previous artist's tab.
+    setSchedTab("weekly");
     setSchedOpen(true);
     setSchedLoading(true);
     const [slotsRes, schedRes] = await Promise.all([
@@ -200,7 +215,7 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
             <UserPlus className="h-5 w-5 text-primary" /> Artists
           </span>
         }
-        description="Add artists and set their weekly availability."
+        description="Add artists, set their weekly availability, and block individual dates off."
       />
       <div className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-border/60 bg-muted/30 p-4">
         <div className="space-y-1.5 flex-1 min-w-40">
@@ -238,8 +253,8 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
       </div>
 
       <p className="mt-3 text-xs text-muted-foreground">
-        Set each artist&apos;s weekly schedule with the calendar button. Artists with no schedule
-        won&apos;t appear in the booking form.
+        Use the calendar button to set an artist&apos;s weekly schedule and to block single dates
+        such as festivals or leave. Artists with no schedule won&apos;t appear in the booking form.
       </p>
 
       <div className="mt-4 space-y-2">
@@ -277,7 +292,7 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
                 size="icon"
                 variant="ghost"
                 className="h-8 w-8"
-                title="Weekly schedule"
+                title="Schedule & days off"
                 onClick={() => openSchedule(s)}
               >
                 <CalendarDays className="h-4 w-4" />
@@ -296,80 +311,104 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
       </div>
 
       <Dialog open={schedOpen} onOpenChange={setSchedOpen}>
-        <DialogContent className="max-w-lg">
+        {/* Capped and scrollable: the days-off month grid makes this dialog tall enough to
+            overflow a laptop viewport, and a fixed, vertically-centred dialog clips off BOTH
+            ends with nothing to scroll — the close button included. */}
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>
-              Weekly schedule{schedStaff ? ` · ${schedStaff.name}` : ""}
-            </DialogTitle>
+            <DialogTitle>Schedule{schedStaff ? ` · ${schedStaff.name}` : ""}</DialogTitle>
           </DialogHeader>
 
-          {schedLoading ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
-          ) : slotColumns.length === 0 ? (
-            <p className="py-6 text-sm text-muted-foreground">
-              No active time slots configured. Add time slots first under Manage → Time Slots.
-            </p>
-          ) : (
-            <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
-              <p className="text-xs text-muted-foreground">
-                Toggle each day this artist works, then pick the time slots. Customers can only book
-                the days and slots enabled here.
-              </p>
-              {DOW.map((label, day) => (
-                <div key={label} className="rounded-lg border border-border/60 p-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="font-medium">{label}</Label>
-                    <Switch
-                      checked={worksDay(day)}
-                      onCheckedChange={(v) => toggleDay(day, v)}
-                      aria-label={`Works on ${label}`}
-                    />
-                  </div>
-                  {worksDay(day) && (
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {slotColumns.map((slot) => {
-                        const on = isSlotOn(day, slot);
-                        return (
-                          <button
-                            type="button"
-                            key={slot}
-                            onClick={() => toggleSlot(day, slot)}
-                            className={cn(
-                              "rounded-full border px-3 py-1 text-xs transition",
-                              on
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border/60 text-muted-foreground hover:border-primary/50",
-                            )}
-                          >
-                            {slot}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+          <Tabs value={schedTab} onValueChange={(v) => setSchedTab(v as SchedTab)}>
+            <TabsList>
+              <TabsTrigger value="weekly">Weekly hours</TabsTrigger>
+              <TabsTrigger value="off">Days off</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="weekly">
+              {schedLoading ? (
+                <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
                 </div>
-              ))}
-            </div>
-          )}
+              ) : slotColumns.length === 0 ? (
+                <p className="py-6 text-sm text-muted-foreground">
+                  No active time slots configured. Add time slots first under Manage → Time Slots.
+                </p>
+              ) : (
+                <div className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
+                  <p className="text-xs text-muted-foreground">
+                    Toggle each day this artist works, then pick the time slots. Customers can only
+                    book the days and slots enabled here.
+                  </p>
+                  {DOW.map((label, day) => (
+                    <div key={label} className="rounded-lg border border-border/60 p-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="font-medium">{label}</Label>
+                        <Switch
+                          checked={worksDay(day)}
+                          onCheckedChange={(v) => toggleDay(day, v)}
+                          aria-label={`Works on ${label}`}
+                        />
+                      </div>
+                      {worksDay(day) && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {slotColumns.map((slot) => {
+                            const on = isSlotOn(day, slot);
+                            return (
+                              <button
+                                type="button"
+                                key={slot}
+                                onClick={() => toggleSlot(day, slot)}
+                                className={cn(
+                                  "rounded-full border px-3 py-1 text-xs transition",
+                                  on
+                                    ? "border-primary bg-primary text-primary-foreground"
+                                    : "border-border/60 text-muted-foreground hover:border-primary/50",
+                                )}
+                              >
+                                {slot}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="off">
+              {schedStaff && (
+                <StaffDaysOff staffId={schedStaff.id} canEdit workingWeekdays={workingWeekdays} />
+              )}
+            </TabsContent>
+          </Tabs>
 
           <DialogFooter>
-            <Button
-              onClick={saveSchedule}
-              disabled={schedSaving || schedLoading}
-              className="bg-gradient-hero text-primary-foreground"
-            >
-              {schedSaving ? (
-                <>
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Saving…
-                </>
-              ) : (
-                <>
-                  <Save className="mr-1 h-4 w-4" /> Save schedule
-                </>
-              )}
-            </Button>
+            {schedTab === "weekly" ? (
+              <Button
+                onClick={saveSchedule}
+                disabled={schedSaving || schedLoading}
+                className="bg-gradient-hero text-primary-foreground"
+              >
+                {schedSaving ? (
+                  <>
+                    <Loader2 className="mr-1 h-4 w-4 animate-spin" /> Saving…
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-1 h-4 w-4" /> Save schedule
+                  </>
+                )}
+              </Button>
+            ) : (
+              // Days off write themselves the moment a date is clicked, so there is nothing to
+              // save here — the button-height line keeps the dialog from jumping between tabs.
+              <p className="flex h-9 items-center text-xs text-muted-foreground">
+                Changes to days off save automatically.
+              </p>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -22,6 +22,7 @@ import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { UPI_VPA_RE } from "@/lib/upi";
 import { BUSINESS } from "@/lib/business";
 import { isMissingStaffPhotoColumn } from "@/lib/staff-photos";
+import { isMissingTimeOffTable } from "@/lib/staff-time-off";
 
 type Admin = ReturnType<typeof createAdminClient>;
 
@@ -288,14 +289,18 @@ export type ReassignCandidate = {
   scheduled: boolean;
   /** Already holds this branch/date/slot — the unique index makes the move impossible. */
   busy: boolean;
+  /** Blocked on this exact date by a staff_time_off row (a dated day off). */
+  dayOff: boolean;
 };
 
 /**
  * Every artist in the booking's branch who could take over this slot, excluding
  * the currently-assigned one. Deliberately NOT filtered by roster: the manager is
  * standing in the studio and knows who is actually free, so an artist without a
- * shift for this slot is offered with `scheduled: false` rather than hidden. Only
- * `busy` is a hard stop, and that's enforced by uq_appointment_slot regardless.
+ * shift for this slot is offered with `scheduled: false` rather than hidden — and
+ * likewise an artist whose day off falls on this date is offered with
+ * `dayOff: true` rather than hidden (they may well have come in). Only `busy` is a
+ * hard stop, and that's enforced by uq_appointment_slot regardless.
  */
 export async function listReassignCandidates(input: { id: string }) {
   const profile = await requireRole(["admin", "manager"]);
@@ -337,6 +342,16 @@ export async function listReassignCandidates(input: { id: string }) {
     .in("staff_id", roster.map((s) => s.id));
   const scheduled = new Set(((sched as { staff_id: string }[] | null) ?? []).map((r) => r.staff_id));
 
+  // Which of them have this exact calendar date blocked as a day off? Built the
+  // same way as `scheduled` above; a missing table (migration not applied yet)
+  // returns no data, so nobody reads as off.
+  const { data: off } = await admin
+    .from("staff_time_off")
+    .select("staff_id")
+    .eq("off_date", bk.appointment_date)
+    .in("staff_id", roster.map((s) => s.id));
+  const daysOff = new Set(((off as { staff_id: string }[] | null) ?? []).map((r) => r.staff_id));
+
   // Expired holds must not make an artist look busy — now that busy artists are
   // shown (and blocked) rather than silently dropped, a stale hold would be a
   // visibly wrong reason. Same sweep listBookings does before reading.
@@ -362,10 +377,12 @@ export async function listReassignCandidates(input: { id: string }) {
       name: s.name,
       scheduled: scheduled.has(s.id),
       busy: occupied.has(s.name.toLowerCase()),
+      dayOff: daysOff.has(s.id),
     }))
-    // Free-and-rostered first, then off-shift (pickable), then busy (blocked).
+    // Free-and-rostered first, then off-shift or on a day off (both pickable, both
+    // flagged), then busy (blocked).
     .sort((a, b) => {
-      const rank = (c: ReassignCandidate) => (c.busy ? 2 : c.scheduled ? 0 : 1);
+      const rank = (c: ReassignCandidate) => (c.busy ? 2 : c.scheduled && !c.dayOff ? 0 : 1);
       return rank(a) - rank(b) || a.name.localeCompare(b.name);
     });
 
@@ -1460,6 +1477,9 @@ export type StaffDetailData = {
   };
   bookings: BookingRow[];
   schedule: ScheduleEntry[];
+  /** Dated days off from today onward ("YYYY-MM-DD", ascending, capped at 60) —
+   *  each one overrides the weekly `schedule` for that single date. */
+  upcomingDaysOff: string[];
   login: StaffLogin | null;
 };
 
@@ -1524,6 +1544,17 @@ export async function getStaffDetail(input: { staffId: string }) {
     .eq("staff_id", staff.id);
   const schedule = (schedData as ScheduleEntry[] | null) ?? [];
 
+  // Dated days off still ahead of us. Display-only, so any failure — including the
+  // staff_time_off migration not being applied yet — simply shows none.
+  const { data: offData } = await admin
+    .from("staff_time_off")
+    .select("off_date")
+    .eq("staff_id", staff.id)
+    .gte("off_date", new Date().toISOString().slice(0, 10))
+    .order("off_date")
+    .limit(60);
+  const upcomingDaysOff = ((offData as { off_date: string }[] | null) ?? []).map((r) => r.off_date);
+
   // Linked login (if any), matched on the roster name + branch.
   const { data: profData } = await admin
     .from("profiles")
@@ -1536,7 +1567,10 @@ export async function getStaffDetail(input: { staffId: string }) {
     ? { email: prof.email ?? "", full_name: prof.full_name, role: prof.role }
     : null;
 
-  return { ok: true as const, detail: { staff, bookings, schedule, login } as StaffDetailData };
+  return {
+    ok: true as const,
+    detail: { staff, bookings, schedule, upcomingDaysOff, login } as StaffDetailData,
+  };
 }
 
 // ─────────────────────────── Staff schedules (weekly) ───────────────────────
@@ -1625,6 +1659,190 @@ export async function setStaffSchedule(input: z.infer<typeof setScheduleInput>) 
   if (rows.length) {
     const { error: insErr } = await admin.from("staff_schedules").insert(rows);
     if (insErr) return { ok: false as const, error: insErr.message };
+  }
+  return { ok: true as const };
+}
+
+// ──────────────────────── Staff days off (dated) ─────────────────────────────
+// A `staff_time_off` row means "this artist does not work that calendar date at
+// all" — a dated override that beats every weekly slot for that one day. Absence
+// of a row = the weekly schedule applies as usual. This is BOOKING availability;
+// payroll absences are a separate thing (staff_salaries.absent_days).
+//
+// Production can run behind the repo, so every read tolerates the table not
+// existing yet: display reads degrade to "no days off", while the two WRITES say
+// so out loud — an admin who blocks a date must never be told it saved when it
+// didn't.
+
+/** A month's day-off picture for one artist, for the admin month calendar. */
+export type StaffMonthOff = {
+  month: string; // "YYYY-MM"
+  daysOff: string[]; // "YYYY-MM-DD", sorted ascending
+  /** date -> how many non-cancelled bookings that artist already has that day. */
+  bookedCounts: Record<string, number>;
+};
+
+const TIME_OFF_NOT_LIVE =
+  "Days off aren't set up on this database yet — the staff_time_off migration hasn't been applied. Nothing was saved.";
+
+// `monthSchema` lives further down with the payroll actions; a const isn't hoisted,
+// so reaching forward to it from here would be a runtime TDZ error. DATE_RE (the
+// members section, above) is safe to reuse.
+const monthOffSchema = z.string().regex(/^\d{4}-\d{2}$/, "Invalid month");
+
+const monthOffInput = z.object({ staffId: z.string().uuid(), month: monthOffSchema });
+
+const dayOffInput = z.object({
+  staffId: z.string().uuid(),
+  date: z.string().regex(DATE_RE, "Invalid date"),
+  reason: z.string().trim().max(200, "Keep the note under 200 characters").nullable().optional(),
+});
+
+/** Roster name + branch for a staff id, or null. Appointments link to an artist by
+ *  NAME within a branch (not by staff_id), so counting their bookings needs both. */
+async function staffNameBranch(
+  admin: Admin,
+  staffId: string,
+): Promise<{ name: string; branch: string } | null> {
+  const { data } = await admin.from("staff").select("name, branch").eq("id", staffId).maybeSingle();
+  return (data as { name: string; branch: string } | null) ?? null;
+}
+
+/** How many non-cancelled bookings that artist holds on one calendar date. */
+async function countBookingsOnDate(
+  admin: Admin,
+  staff: { name: string; branch: string },
+  date: string,
+): Promise<number> {
+  // Exact (case-insensitive) name match within the branch — `ilike` with no
+  // wildcards can't pull in another artist whose name is a superstring.
+  const { count } = await admin
+    .from("appointments")
+    .select("id", { count: "exact", head: true })
+    .ilike("staff_name", staff.name)
+    .eq("branch", staff.branch as (typeof BRANCHES_TUPLE)[number])
+    .eq("appointment_date", date)
+    .in("payment_status", SLOT_HOLDING_STATUSES as unknown as string[]);
+  return count ?? 0;
+}
+
+/**
+ * The blocked dates for one artist in one month, plus how many bookings they
+ * already have on each day of it — the admin calendar needs both to warn before
+ * blocking a day customers are already booked into.
+ */
+export async function getStaffMonthOff(input: {
+  staffId: string;
+  month: string;
+}): Promise<{ ok: true; data: StaffMonthOff } | { ok: false; error: string; data: null }> {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return { ...UNAUTHORIZED, data: null };
+  const parsed = monthOffInput.safeParse(input);
+  if (!parsed.success)
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid", data: null };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.staffId)))
+    return { ...UNAUTHORIZED, data: null };
+
+  const staff = await staffNameBranch(admin, parsed.data.staffId);
+  if (!staff) return { ok: false as const, error: "Artist not found", data: null };
+
+  // Half-open [start, end) so a month never double-counts its boundary day.
+  const { start, end } = monthBounds(parsed.data.month);
+
+  const { data: apptData, error: apptErr } = await admin
+    .from("appointments")
+    .select("appointment_date")
+    .ilike("staff_name", staff.name)
+    .eq("branch", staff.branch as (typeof BRANCHES_TUPLE)[number])
+    .gte("appointment_date", start)
+    .lt("appointment_date", end)
+    .in("payment_status", SLOT_HOLDING_STATUSES as unknown as string[]);
+  if (apptErr) return { ok: false as const, error: apptErr.message, data: null };
+  const bookedCounts: Record<string, number> = {};
+  for (const r of (apptData as { appointment_date: string }[] | null) ?? []) {
+    bookedCounts[r.appointment_date] = (bookedCounts[r.appointment_date] ?? 0) + 1;
+  }
+
+  const { data: offData, error: offErr } = await admin
+    .from("staff_time_off")
+    .select("off_date")
+    .eq("staff_id", parsed.data.staffId)
+    .gte("off_date", start)
+    .lt("off_date", end)
+    .order("off_date");
+  // Migration not applied yet -> nothing is blocked, but still hand back the real
+  // booking counts so the calendar draws rather than erroring out.
+  if (offErr && !isMissingTimeOffTable(offErr))
+    return { ok: false as const, error: offErr.message, data: null };
+  const daysOff = offErr
+    ? []
+    : ((offData as { off_date: string }[] | null) ?? []).map((r) => r.off_date);
+
+  return { ok: true as const, data: { month: parsed.data.month, daysOff, bookedCounts } };
+}
+
+/**
+ * Block one calendar date for an artist. Returns how many non-cancelled bookings
+ * they already have that day: a WARNING for the operator, not a block — this
+ * deliberately does not cancel or move anything, so those customers must be
+ * reassigned or cancelled by hand.
+ */
+export async function addStaffDayOff(input: {
+  staffId: string;
+  date: string;
+  reason?: string | null;
+}): Promise<{ ok: true; bookings: number } | { ok: false; error: string }> {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return UNAUTHORIZED;
+  const parsed = dayOffInput.safeParse(input);
+  if (!parsed.success)
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.staffId))) return UNAUTHORIZED;
+
+  const staff = await staffNameBranch(admin, parsed.data.staffId);
+  if (!staff) return { ok: false as const, error: "Artist not found" };
+
+  const { error } = await admin.from("staff_time_off").insert({
+    staff_id: parsed.data.staffId,
+    off_date: parsed.data.date,
+    reason: parsed.data.reason?.trim() || null,
+    created_by: profile.id,
+  });
+  if (error) {
+    if (isMissingTimeOffTable(error)) return { ok: false as const, error: TIME_OFF_NOT_LIVE };
+    // 23505 = the date is already blocked (uniq staff_id, off_date). That's exactly
+    // the state the operator asked for, so it's a success, not an error.
+    if ((error as { code?: string }).code !== "23505")
+      return { ok: false as const, error: error.message };
+  }
+
+  return { ok: true as const, bookings: await countBookingsOnDate(admin, staff, parsed.data.date) };
+}
+
+/** Unblock a date — the artist's weekly schedule applies again from then on. */
+export async function removeStaffDayOff(input: {
+  staffId: string;
+  date: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const profile = await requireRole(["admin", "manager"]);
+  if (!profile) return UNAUTHORIZED;
+  // `reason` is optional in dayOffInput, so the same schema validates a delete.
+  const parsed = dayOffInput.safeParse(input);
+  if (!parsed.success)
+    return { ok: false as const, error: parsed.error.issues[0]?.message ?? "Invalid" };
+  const admin = createAdminClient();
+  if (!(await staffInScope(admin, profile, parsed.data.staffId))) return UNAUTHORIZED;
+
+  const { error } = await admin
+    .from("staff_time_off")
+    .delete()
+    .eq("staff_id", parsed.data.staffId)
+    .eq("off_date", parsed.data.date);
+  if (error) {
+    if (isMissingTimeOffTable(error)) return { ok: false as const, error: TIME_OFF_NOT_LIVE };
+    return { ok: false as const, error: error.message };
   }
   return { ok: true as const };
 }

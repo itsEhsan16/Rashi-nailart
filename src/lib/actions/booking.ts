@@ -20,6 +20,7 @@ import {
 } from "@/lib/cashfree";
 import { notifyCustomer } from "@/lib/notify";
 import { settleBookingPayment } from "@/lib/payments-core";
+import { isMissingTimeOffTable } from "@/lib/staff-time-off";
 import { isSlotCutoffBlocked, isSlotInPast } from "@/lib/utils";
 import {
   BRANCHES_TUPLE,
@@ -71,44 +72,127 @@ const slotsInputSchema = z.object({
   appointment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-/** Slots already taken (any non-cancelled booking) for a staff/branch/date. */
-export async function getBookedSlots(input: z.infer<typeof slotsInputSchema>) {
+/**
+ * Slots already taken (any non-cancelled booking) for a staff/branch/date, plus
+ * whether the artist has that whole calendar date blocked (`staff_time_off`).
+ * `dayOff` is a DISPLAY hint only — createBooking is the authoritative guard —
+ * so slots are still returned as normal and the client decides what to show.
+ */
+export async function getBookedSlots(
+  input: z.infer<typeof slotsInputSchema>,
+): Promise<{ slots: string[]; dayOff: boolean }> {
   const parsed = slotsInputSchema.safeParse(input);
-  if (!parsed.success) return { slots: [] as string[] };
+  if (!parsed.success) return { slots: [], dayOff: false };
   const admin = createAdminClient();
   // Drop abandoned no-proof holds first so they don't show the slot as taken.
   await sweepStalePendingHolds();
-  const { data } = await admin
-    .from("appointments")
-    .select("time_slot")
-    .eq("branch", parsed.data.branch)
-    .eq("staff_name", parsed.data.staff_name)
-    .eq("appointment_date", parsed.data.appointment_date)
-    .in("payment_status", SLOT_HOLDING_STATUSES as unknown as string[]);
-  const rows = (data as { time_slot: string }[] | null) ?? [];
-  return { slots: Array.from(new Set(rows.map((r) => r.time_slot))) };
+  const [slotRes, dayOff] = await Promise.all([
+    admin
+      .from("appointments")
+      .select("time_slot")
+      .eq("branch", parsed.data.branch)
+      .eq("staff_name", parsed.data.staff_name)
+      .eq("appointment_date", parsed.data.appointment_date)
+      .in("payment_status", SLOT_HOLDING_STATUSES as unknown as string[]),
+    isStaffDayOff(
+      admin,
+      parsed.data.branch,
+      parsed.data.staff_name,
+      parsed.data.appointment_date,
+    ),
+  ]);
+  const rows = (slotRes.data as { time_slot: string }[] | null) ?? [];
+  return { slots: Array.from(new Set(rows.map((r) => r.time_slot))), dayOff };
 }
 
-/** True if (name+branch) is scheduled to work `timeSlot` on the weekday of isoDate. */
-async function staffWorksSlot(
+/** staff.id for a (name + branch) pair, or null when no such artist exists. */
+async function staffIdFor(
   admin: Admin,
   branch: CreateBookingInput["branch"],
   staffName: string,
-  isoDate: string,
-  timeSlot: string,
-): Promise<boolean> {
-  // getUTCDay on an explicit UTC-midnight string = the chosen calendar day's
-  // weekday, independent of server timezone. Matches the client's local getDay()
-  // because a fixed calendar date has the same weekday everywhere.
-  const dow = new Date(`${isoDate}T00:00:00Z`).getUTCDay(); // 0=Sun..6=Sat
-  const { data: staffRow } = await admin
+): Promise<string | null> {
+  const { data } = await admin
     .from("staff")
     .select("id")
     .eq("name", staffName)
     .eq("branch", branch)
     .maybeSingle();
-  const sid = (staffRow as { id: string } | null)?.id;
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * True when the artist has a dated day off on `isoDate`. FAILS OPEN — this only
+ * feeds the customer's slot picker, so a missing `staff_time_off` table
+ * (migration not applied yet) or any read error reports "not off" rather than
+ * hiding a working day. The real block lives in checkStaffAvailability.
+ */
+async function isStaffDayOff(
+  admin: Admin,
+  branch: CreateBookingInput["branch"],
+  staffName: string,
+  isoDate: string,
+): Promise<boolean> {
+  const sid = await staffIdFor(admin, branch, staffName);
   if (!sid) return false;
+  const { data, error } = await admin
+    .from("staff_time_off")
+    .select("id")
+    .eq("staff_id", sid)
+    .eq("off_date", isoDate)
+    .limit(1);
+  if (error) {
+    if (!isMissingTimeOffTable(error)) {
+      console.error("[getBookedSlots] staff_time_off read failed:", error.message);
+    }
+    return false;
+  }
+  return ((data as { id: string }[] | null) ?? []).length > 0;
+}
+
+/**
+ * Why a (name+branch) can or cannot take a booking:
+ *   ok            — scheduled for this weekday + slot, and the date isn't blocked
+ *   unknown_staff — no such artist at that branch
+ *   not_scheduled — the artist doesn't work that weekday/slot
+ *   day_off       — a dated `staff_time_off` override blanks the whole date
+ */
+type AvailabilityCheck = "ok" | "unknown_staff" | "not_scheduled" | "day_off";
+
+/** Whether (name+branch) can work `timeSlot` on `isoDate`, and if not, why. */
+async function checkStaffAvailability(
+  admin: Admin,
+  branch: CreateBookingInput["branch"],
+  staffName: string,
+  isoDate: string,
+  timeSlot: string,
+): Promise<AvailabilityCheck> {
+  // getUTCDay on an explicit UTC-midnight string = the chosen calendar day's
+  // weekday, independent of server timezone. Matches the client's local getDay()
+  // because a fixed calendar date has the same weekday everywhere.
+  const dow = new Date(`${isoDate}T00:00:00Z`).getUTCDay(); // 0=Sun..6=Sat
+  const sid = await staffIdFor(admin, branch, staffName);
+  if (!sid) return "unknown_staff";
+
+  // Dated override, checked before the weekly schedule: one staff_time_off row
+  // blanks the entire date no matter what the weekly matrix says.
+  const { data: offRows, error: offErr } = await admin
+    .from("staff_time_off")
+    .select("id")
+    .eq("staff_id", sid)
+    .eq("off_date", isoDate)
+    .limit(1);
+  if (offErr) {
+    // FAIL CLOSED. A missing table simply means the feature isn't live yet, so
+    // fall through to the schedule check; ANY other error is a database wobble
+    // and must never be the reason a booking lands on a blocked date.
+    if (!isMissingTimeOffTable(offErr)) {
+      console.error("[checkStaffAvailability] staff_time_off read failed:", offErr.message);
+      return "day_off";
+    }
+  } else if (((offRows as { id: string }[] | null) ?? []).length > 0) {
+    return "day_off";
+  }
+
   const { data } = await admin
     .from("staff_schedules")
     .select("id")
@@ -116,7 +200,7 @@ async function staffWorksSlot(
     .eq("day_of_week", dow)
     .eq("time_slot", timeSlot)
     .limit(1);
-  return ((data as { id: string }[] | null) ?? []).length > 0;
+  return ((data as { id: string }[] | null) ?? []).length > 0 ? "ok" : "not_scheduled";
 }
 
 /** Authoritative price from DB (falls back to constants pre-migration). */
@@ -157,9 +241,24 @@ export async function createBooking(input: CreateBookingInput) {
   const d = parsed.data;
   const admin = createAdminClient();
 
-  // Availability guard: the stylist must be scheduled for this weekday + slot.
-  // Defends against stale/crafted submissions that bypass the form's filtering.
-  if (!(await staffWorksSlot(admin, d.branch, d.staff_name, d.appointment_date, d.time_slot))) {
+  // Availability guard: the stylist must be scheduled for this weekday + slot,
+  // and must not have blocked the date outright. Defends against stale/crafted
+  // submissions that bypass the form's filtering.
+  const availability = await checkStaffAvailability(
+    admin,
+    d.branch,
+    d.staff_name,
+    d.appointment_date,
+    d.time_slot,
+  );
+  if (availability === "day_off") {
+    // A whole-date block — pointing at another slot would be misleading.
+    return {
+      ok: false as const,
+      error: "That artist isn't available on the selected date. Please pick another date or artist.",
+    };
+  }
+  if (availability !== "ok") {
     return {
       ok: false as const,
       error: "That artist isn't available at the selected time. Please pick another slot, date, or artist.",
