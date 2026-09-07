@@ -1,8 +1,11 @@
 -- ============================================================================
--- THIRD STUDIO: 'Borivali W' — branches row · STEP 2 OF 2 (2026-09-08)
+-- THIRD STUDIO: 'Borivali W' — branches row (2026-09-08)
 -- ----------------------------------------------------------------------------
--- Requires 20260908120000 to have COMMITTED first — see that file for why the
--- ALTER TYPE cannot share this transaction.
+-- On the live project (wvosbrierwuwjgiplksz) this is the ONLY step: branches.name
+-- is plain text there, confirmed by 20260908120000 returning 42704 "type
+-- public.branch does not exist". On a database that still has the enum, run
+-- 20260908120000 first and let it COMMIT — see that file for why the ALTER TYPE
+-- cannot share this transaction.
 --
 -- SEEDED ACTIVE. getCatalog() filters `active = true` (src/lib/catalog.ts), so
 -- the studio is published to the landing page, /contact, /about and the customer
