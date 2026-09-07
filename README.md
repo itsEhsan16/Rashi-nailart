@@ -2,7 +2,7 @@
 
 A production-ready salon appointment-booking platform — **Next.js 14+ (App Router)**, **TypeScript (strict)**, **Tailwind v4 + shadcn/ui**, **Supabase** (Auth, Postgres, RLS, Storage) with **Cashfree online payments** (auto-confirmed via return page + webhook). Migrated from the original TanStack Start app (see [`MIGRATION_PLAN.md`](./MIGRATION_PLAN.md)).
 
-Branches: **Vile Parle · Bandra** — in **Mumbai**.
+Branches: **Vile Parle · Bandra · Borivali W** — in **Mumbai**.
 
 ---
 

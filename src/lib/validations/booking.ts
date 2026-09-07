@@ -1,6 +1,15 @@
 import { z } from "zod";
 
-export const BRANCHES_TUPLE = ["Vile Parle", "Bandra"] as const;
+import { BRANCHES } from "@/lib/salon-data";
+
+/**
+ * Server-side branch vocabulary. Re-exported from @/lib/salon-data rather than
+ * re-declared — these were two independent literals, and a branch added to one
+ * silently 400'd through the other. Keep the import direction this way:
+ * salon-data has no dependencies, so importing it here is free, whereas the
+ * reverse would pull zod into every client consumer of salon-data.
+ */
+export const BRANCHES_TUPLE = BRANCHES;
 
 /** +91 / 10-digit Indian mobile. */
 export const phoneSchema = z

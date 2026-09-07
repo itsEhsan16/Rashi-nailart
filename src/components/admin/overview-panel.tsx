@@ -174,7 +174,7 @@ export function OverviewPanel() {
 
       <Card className="p-5">
         <SectionHeader title="Earnings by artist" className="mb-4" />
-        <StaffEarningsTable rows={data.staffStats} />
+        <StaffEarningsTable rows={data.staffStats} showBranch />
       </Card>
 
       <Card className="p-5">

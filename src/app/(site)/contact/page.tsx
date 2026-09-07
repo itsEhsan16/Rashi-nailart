@@ -16,9 +16,10 @@ export const metadata: Metadata = {
   description: `Phone, email and studio locations for ${BUSINESS.tradingName} in Mumbai.`,
 };
 
-/** Branch addresses are admin-editable and may be locality-only placeholders, so
- *  fall back to a sensible label rather than rendering an empty line. Never fall
- *  back to the registered office — that is in Borivali West and is not a studio. */
+/** Branch addresses are admin-editable and may be blank, so fall back to a
+ *  sensible label rather than rendering an empty line. Never fall back to the
+ *  registered office: it is the legal address of the proprietorship, and using it
+ *  here would put a Borivali West address on the Vile Parle and Bandra cards. */
 function branchAddress(name: string, address: string | null): string {
   return address?.trim() || `${name}, Mumbai, Maharashtra`;
 }
@@ -118,8 +119,9 @@ export default async function ContactPage() {
 
       <h2 id="registered-office">Registered office</h2>
       <p className="note">
-        This is our registered business address, not a studio. Please book an appointment before
-        visiting a studio.
+        This is our registered business address — the legal address of the proprietorship. Our
+        Borivali W studio trades from here; Vile Parle and Bandra are elsewhere, listed above.
+        Please book an appointment before visiting any studio.
       </p>
       <p>
         <strong>{BUSINESS.legalName}</strong>

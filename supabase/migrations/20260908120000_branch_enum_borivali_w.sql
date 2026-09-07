@@ -1,0 +1,36 @@
+-- ============================================================================
+-- THIRD STUDIO: 'Borivali W' — enum label · STEP 1 OF 2 (2026-09-08)
+-- ----------------------------------------------------------------------------
+-- public.branches.name is still the public.branch ENUM: the type is declared in
+-- 20260427112326:4 and the column in 20260605091000:51, and NOTHING has ever
+-- altered that column — 20260615140000:139 is a `create table if not exists`,
+-- a no-op on an existing table. profiles.branch (20260605090000:14) is the same
+-- enum, and handle_new_user() casts raw_user_meta_data->>'branch' to it. So
+-- without this label the branch row cannot be seeded AND the manager login
+-- cannot be created.
+--
+-- WHY THIS IS ITS OWN FILE: Postgres refuses to USE a value added by
+-- ALTER TYPE ... ADD VALUE inside the transaction that added it (SQLSTATE 55P04,
+-- "unsafe use of new value"). The Supabase SQL editor runs a pasted script as ONE
+-- transaction, so the seed INSERT lives in step 2
+-- (20260908120100_seed_borivali_w_branch.sql). Run THIS file, let it COMMIT, then
+-- run step 2 as a SEPARATE execution. Same split the repo used for Kandivali:
+-- label in 20260501130420:3, branches row in 20260605091000:60.
+--
+-- If the pre-flight showed public.branch no longer exists (every branch column is
+-- really text), this errors with "type public.branch does not exist" — that is
+-- the expected SKIP case, not a failure. Run only step 2.
+--
+-- The label appends last in enum sort order, so `order by branch` on an enum
+-- column lists Vile Parle, Bandra, then Borivali W.
+--
+-- Idempotent — safe to re-run.
+-- ============================================================================
+
+-- Schema-qualified on purpose: 20260501130420:3 said bare `alter type branch`,
+-- which leans on search_path. Don't.
+alter type public.branch add value if not exists 'Borivali W';
+
+-- Verify AFTER this commits — the new label is invisible inside its own txn:
+--   select enumsortorder, enumlabel from pg_enum
+--   where enumtypid = 'public.branch'::regtype order by 1;

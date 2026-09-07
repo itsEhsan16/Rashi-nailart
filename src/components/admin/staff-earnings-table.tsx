@@ -19,8 +19,19 @@ const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
  * Per-artist completed-work rollup (count · services · extras · earnings).
  * Shared by the admin overview (all branches) and the manager branch overview.
  * Earnings exclude the ₹50 booking fee — it's the salon's, never the artist's.
+ *
+ * `showBranch` labels each artist with their studio. Pass it for the admin view,
+ * where two branches can employ artists of the same name and the rows would
+ * otherwise be indistinguishable; leave it off for a manager, whose rows are all
+ * one branch already.
  */
-export function StaffEarningsTable({ rows }: { rows: StaffEarning[] }) {
+export function StaffEarningsTable({
+  rows,
+  showBranch = false,
+}: {
+  rows: StaffEarning[];
+  showBranch?: boolean;
+}) {
   if (!rows.length) {
     return (
       <EmptyState
@@ -44,8 +55,14 @@ export function StaffEarningsTable({ rows }: { rows: StaffEarning[] }) {
       </TableHeader>
       <TableBody>
         {rows.map((r) => (
-          <TableRow key={r.staffName}>
-            <TableCell className="font-medium">{r.staffName}</TableCell>
+          // Branch + name: the name alone is not unique across studios.
+          <TableRow key={`${r.branch}|${r.staffName}`}>
+            <TableCell className="font-medium">
+              {r.staffName}
+              {showBranch && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">{r.branch}</span>
+              )}
+            </TableCell>
             <TableCell className="text-right tabular-nums">{r.completed}</TableCell>
             <TableCell className="text-right tabular-nums">{inr(r.serviceRevenue)}</TableCell>
             <TableCell className="text-right tabular-nums">{inr(r.extrasRevenue)}</TableCell>

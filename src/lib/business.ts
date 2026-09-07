@@ -27,9 +27,17 @@ export const BUSINESS = {
   entityType: "Sole Proprietorship",
 
   /**
-   * Registered office. Note this is NOT a studio address — it is the registered
-   * address of the proprietorship, in Borivali West, while the studios operate in
-   * Vile Parle and Bandra. Never render it as a branch location.
+   * Registered office of the proprietorship — the address on the Udyam
+   * certificate. It is ALSO where the Borivali W studio trades from, but the two
+   * are kept as separate records on purpose:
+   *
+   *   • this constant asserts LEGAL identity, must appear in the served HTML for
+   *     the payment aggregator, and must never change with a branch edit;
+   *   • the customer-facing studio address lives in the `branches` table and is
+   *     admin-editable (Admin → Manage → Branches).
+   *
+   * So: never render this block as a branch location, and never fall back to it
+   * when a branch address is blank — Vile Parle and Bandra are elsewhere.
    */
   registeredOffice: {
     line1: "Shop No 7, Mansarovar Building",
