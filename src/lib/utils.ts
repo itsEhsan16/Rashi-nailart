@@ -203,6 +203,16 @@ export function formatLocalDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/**
+ * Today's calendar date in IST ("YYYY-MM-DD"), whatever timezone the code runs in.
+ * The studio works in IST, but a Vercel server is UTC, where the date flips 5½ hours
+ * late — so a server-side "is this booking still upcoming?" check can't use the
+ * server's local date. `now` is injectable for testing.
+ */
+export function istToday(now: number = Date.now()): string {
+  return new Date(now + 330 * 60_000).toISOString().slice(0, 10);
+}
+
 export type Period = "AM" | "PM";
 
 /**
