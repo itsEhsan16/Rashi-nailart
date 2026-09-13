@@ -14,6 +14,8 @@ import {
   CalendarX2,
   UserCog,
   Scissors,
+  CalendarOff,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -46,7 +48,7 @@ import { ExtrasDialog } from "@/components/dashboard/extras-dialog";
 import { ReassignDialog } from "@/components/dashboard/reassign-dialog";
 import { ChangeServiceDialog } from "@/components/dashboard/change-service-dialog";
 import { TableSkeleton } from "@/components/dashboard/skeletons";
-import { cn } from "@/lib/utils";
+import { cn, formatLocalDate } from "@/lib/utils";
 import { sortBySchedule } from "@/lib/booking-sort";
 import { downloadCsv } from "@/lib/export-csv";
 import { BRANCHES } from "@/lib/salon-data";
@@ -86,7 +88,8 @@ function ServiceSummary({ r }: { r: BookingRow }) {
   );
 }
 
-/** Current artist, with a note when a manager reassigned the booking from another. */
+/** Current artist, with a note when a manager reassigned the booking from another, or
+ *  when that artist has this date blocked as a day off. */
 function StaffCell({ r }: { r: BookingRow }) {
   return (
     <>
@@ -94,6 +97,12 @@ function StaffCell({ r }: { r: BookingRow }) {
       {r.original_staff_name && (
         <span className="mt-0.5 block text-[11px] text-amber-600">
           reassigned from {r.original_staff_name}
+        </span>
+      )}
+      {r.artist_on_leave && (
+        <span className="mt-0.5 block text-[11px] font-medium text-amber-600 dark:text-amber-400">
+          <CalendarOff className="mr-1 inline h-3 w-3 align-[-2px]" />
+          {r.completed ? "was on leave this day" : "on leave this day"}
         </span>
       )}
     </>
@@ -108,11 +117,23 @@ export function BookingsPanel({ role }: { role: UserRole }) {
 
   const [rows, setRows] = useState<BookingRow[]>([]);
   const [view, setView] = useState<"active" | "completed">("active");
+  // Narrow the list to the on-leave clashes (toggled from the banner).
+  const [onlyLeave, setOnlyLeave] = useState(false);
+  const todayIso = formatLocalDate(new Date());
+  // Upcoming bookings still with an artist who has blocked that date. Blocking a day
+  // never cancels what was already booked on it, so each of these needs a person to
+  // reassign or cancel it before the customer turns up.
+  const leaveClashes = useMemo(
+    () => rows.filter((r) => r.artist_on_leave && !r.completed && r.appointment_date >= todayIso),
+    [rows, todayIso],
+  );
+  const clashIds = useMemo(() => new Set(leaveClashes.map((r) => r.id)), [leaveClashes]);
   // Completed bookings live only in the Completed tab — excluded from every other view.
   const displayRows = useMemo(() => {
     const sorted = sortBySchedule(rows, Date.now());
+    if (onlyLeave) return sorted.filter((r) => clashIds.has(r.id));
     return view === "completed" ? sorted : sorted.filter((r) => !r.completed);
-  }, [rows, view]);
+  }, [rows, view, onlyLeave, clashIds]);
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState<Date | undefined>();
   const [branch, setBranch] = useState<string>("");
@@ -142,6 +163,11 @@ export function BookingsPanel({ role }: { role: UserRole }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Once the last clash is reassigned the filter would show an empty list — drop it.
+  useEffect(() => {
+    if (onlyLeave && leaveClashes.length === 0) setOnlyLeave(false);
+  }, [onlyLeave, leaveClashes.length]);
 
   async function onComplete(id: string) {
     const res = await completeBooking({ id });
@@ -181,6 +207,9 @@ export function BookingsPanel({ role }: { role: UserRole }) {
         total: r.price + r.extras_total,
         staff: r.staff_name,
         reassigned_from: r.original_staff_name ?? "",
+        // Commission follows staff_name, so a completed booking on a leave day is
+        // worth checking: whoever actually did it may not be who it's credited to.
+        artist_on_leave: r.artist_on_leave ? "yes" : "",
         member: r.is_member ? "yes" : "no",
         status: r.completed ? "completed" : r.payment_status,
         notes: r.special_requests ?? "",
@@ -246,7 +275,13 @@ export function BookingsPanel({ role }: { role: UserRole }) {
 
   return (
     <div className="space-y-6">
-      <Tabs value={view} onValueChange={(v) => setView(v as "active" | "completed")}>
+      <Tabs
+        value={view}
+        onValueChange={(v) => {
+          setView(v as "active" | "completed");
+          setOnlyLeave(false);
+        }}
+      >
         <TabsList>
           <TabsTrigger value="active">Bookings</TabsTrigger>
           <TabsTrigger value="completed">Completed</TabsTrigger>
@@ -347,6 +382,30 @@ export function BookingsPanel({ role }: { role: UserRole }) {
         </Card>
       )}
 
+      {canManage && view === "active" && leaveClashes.length > 0 && (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-300"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <p className="min-w-0 flex-1">
+            <span className="font-semibold">
+              {leaveClashes.length} upcoming booking{leaveClashes.length === 1 ? "" : "s"}
+            </span>{" "}
+            {leaveClashes.length === 1 ? "is" : "are"} with an artist on leave that day —
+            reassign or cancel {leaveClashes.length === 1 ? "it" : "them"}.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-amber-500/50 bg-transparent"
+            onClick={() => setOnlyLeave((v) => !v)}
+          >
+            {onlyLeave ? "Show all bookings" : "Show only these"}
+          </Button>
+        </div>
+      )}
+
       {/* Desktop table */}
       {loading ? (
         <TableSkeleton columns={colSpan} />
@@ -390,6 +449,8 @@ export function BookingsPanel({ role }: { role: UserRole }) {
                     r.payment_status === "pending_payment" && "opacity-60",
                     (r.payment_status === "rejected" || r.payment_status === "cancelled") && "opacity-50",
                     r.completed && "bg-emerald-500/5",
+                    // Last, so it wins over the member tint: this row needs action.
+                    clashIds.has(r.id) && "bg-amber-500/10",
                   )}
                 >
                   <TableCell className="font-medium">
@@ -461,6 +522,7 @@ export function BookingsPanel({ role }: { role: UserRole }) {
               r.is_member && "border-primary/30 bg-primary/5",
               r.completed && "bg-emerald-500/5",
               (r.payment_status === "rejected" || r.payment_status === "cancelled") && "opacity-60",
+              clashIds.has(r.id) && "border-amber-500/40 bg-amber-500/5",
             )}
           >
             <div className="flex items-start justify-between gap-2">

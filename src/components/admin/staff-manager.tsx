@@ -18,6 +18,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -56,6 +65,12 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
   const [storeNumber, setStoreNumber] = useState("");
   const [branch, setBranch] = useState<string>(lockedBranch ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Remove-artist confirmation. The target outlives `removeOpen` on purpose, so the
+  // dialog's text doesn't blank out mid close-animation.
+  const [removeTarget, setRemoveTarget] = useState<StaffRow | null>(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   // Edit-store-number dialog
   const [editStaff, setEditStaff] = useState<StaffRow | null>(null);
@@ -123,11 +138,21 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
     void load();
   }
 
-  async function onRemove(id: string, n: string) {
-    if (!confirm(`Remove ${n}?`)) return;
-    const res = await removeStaff({ id });
+  function askRemove(s: StaffRow) {
+    setRemoveTarget(s);
+    setRemoveOpen(true);
+  }
+
+  async function confirmRemove() {
+    if (!removeTarget) return;
+    setRemoving(true);
+    const res = await removeStaff({ id: removeTarget.id });
+    setRemoving(false);
+    setRemoveOpen(false);
+    // The server refuses while the artist has upcoming bookings; its message says
+    // how many and what to do, so surface it verbatim.
     if (!res.ok) return toast.error(res.error);
-    toast.success("Artist removed");
+    toast.success(`${removeTarget.name} removed from the roster`);
     void load();
   }
 
@@ -297,11 +322,16 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
               >
                 <CalendarDays className="h-4 w-4" />
               </Button>
+              {/* Divider so the destructive button isn't flush against the schedule
+                  button right beside it — the one admins click most. */}
+              <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />
               <Button
                 size="icon"
                 variant="ghost"
                 className="h-8 w-8 text-destructive hover:text-destructive"
-                onClick={() => onRemove(s.id, s.name)}
+                title="Remove artist"
+                aria-label={`Remove ${s.name}`}
+                onClick={() => askRemove(s)}
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
@@ -412,6 +442,40 @@ export function StaffManager({ lockedBranch }: { lockedBranch?: BranchName }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Radix focuses Cancel when this opens, so Enter never removes anyone. The
+          confirm is a plain Button, not AlertDialogAction: Action always closes the
+          dialog, and it has to stay open while the server decides. */}
+      <AlertDialog open={removeOpen} onOpenChange={(o) => !removing && setRemoveOpen(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removeTarget?.name} from the roster?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  This permanently deletes {removeTarget?.name}&apos;s weekly schedule, days off
+                  and salary history. It can&apos;t be undone.
+                </p>
+                <p>
+                  Past bookings are kept. An artist who still has upcoming bookings can&apos;t be
+                  removed — reassign or cancel those first.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={removing}>Keep {removeTarget?.name}</AlertDialogCancel>
+            <Button variant="destructive" onClick={confirmRemove} disabled={removing}>
+              {removing ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1 h-4 w-4" />
+              )}
+              Remove {removeTarget?.name}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={!!editStaff} onOpenChange={(o) => !o && setEditStaff(null)}>
         <DialogContent className="max-w-sm">

@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { format } from "date-fns";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentProfile, type AuthProfile, type UserRole } from "@/lib/auth";
 import { BRANCHES_TUPLE } from "@/lib/validations/booking";
@@ -17,7 +18,7 @@ import {
   SERVICES,
   type PaymentMode,
 } from "@/lib/salon-data";
-import { monthBounds, daysInMonth, sortSlotsByStart } from "@/lib/utils";
+import { istToday, monthBounds, daysInMonth, sortSlotsByStart } from "@/lib/utils";
 import { sweepStalePendingHolds } from "@/lib/actions/booking";
 import { UPI_VPA_RE } from "@/lib/upi";
 import { BUSINESS } from "@/lib/business";
@@ -67,6 +68,10 @@ export type BookingRow = {
   /** Staff view only: true when this booking was reassigned AWAY from the viewer to
    *  another artist (so their dashboard shows it read-only, not counted in earnings). */
   reassigned_away: boolean;
+  /** Admin/manager lists only: the booking still holds its slot, but its artist has
+   *  this date blocked as a day off — so someone has to reassign or cancel it. Absent
+   *  on staff lists and on paths that skip the check. */
+  artist_on_leave?: boolean;
 };
 
 const BOOKING_COLUMNS =
@@ -136,6 +141,19 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
     }));
   }
 
+  // Admin/manager: flag live bookings whose artist has this date blocked. Blocking a
+  // day never cancels what's already booked on it, and the one-off toast shown at
+  // block time is easy to miss — this keeps the clash visible until it's resolved.
+  if (profile.role !== "staff" && bookings.length) {
+    const onLeave = await artistLeaveKeys(admin, bookings);
+    bookings = bookings.map((b) => ({
+      ...b,
+      artist_on_leave:
+        (SLOT_HOLDING_STATUSES as readonly string[]).includes(b.payment_status) &&
+        onLeave.has(leaveKey(b.branch, b.staff_name, b.appointment_date)),
+    }));
+  }
+
   // Staff view: redact client phone, and flag bookings reassigned away from them
   // (staff_name is now someone else, so it was reassigned to another artist).
   if (profile.role === "staff") {
@@ -147,6 +165,41 @@ export async function listBookings(input: z.infer<typeof filtersSchema> = {}) {
     }));
   }
   return { ok: true as const, bookings, role: profile.role };
+}
+
+/** branch|artist|date — how a booking meets its artist's day off. Appointments
+ *  reference artists by NAME within a branch, not by staff_id. */
+function leaveKey(branch: string, staffName: string, date: string): string {
+  return `${branch}|${staffName.trim().toLowerCase()}|${date}`;
+}
+
+/**
+ * Every (branch, artist, date) within these bookings' date range on which the artist
+ * has a dated day off. Display-only: a missing staff_time_off table or any read error
+ * just flags nothing, rather than failing the whole bookings list.
+ */
+async function artistLeaveKeys(admin: Admin, bookings: BookingRow[]): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const dates = bookings.map((b) => b.appointment_date).sort();
+  const { data, error } = await admin
+    .from("staff_time_off")
+    .select("off_date, staff(name, branch)")
+    .gte("off_date", dates[0])
+    .lte("off_date", dates[dates.length - 1]);
+  if (error) {
+    if (!isMissingTimeOffTable(error)) {
+      console.error("[listBookings] staff_time_off read failed:", error.message);
+    }
+    return keys;
+  }
+  const rows =
+    (data as unknown as
+      | { off_date: string; staff: { name: string; branch: string } | null }[]
+      | null) ?? [];
+  for (const r of rows) {
+    if (r.staff) keys.add(leaveKey(r.staff.branch, r.staff.name, r.off_date));
+  }
+  return keys;
 }
 
 const idSchema = z.object({ id: z.string().uuid() });
@@ -1471,15 +1524,81 @@ export async function updateStaff(input: z.infer<typeof updateStaffInput>) {
   return { ok: true as const };
 }
 
+/**
+ * Take an artist off the roster. A HARD delete: staff_schedules, staff_time_off and
+ * staff_salaries all cascade from staff.id, so the artist's weekly schedule, days off
+ * and salary history go with the row. Bookings survive (they reference the artist by
+ * name), and so does any login, which simply stops matching an artist.
+ *
+ * Refused while the artist still has upcoming bookings — those customers would be left
+ * with an artist nobody can schedule or reassign to. That is exactly how an artist
+ * with paid bookings a week ahead was lost: one mis-click beside the schedule button.
+ */
 export async function removeStaff(input: { id: string }) {
   const profile = await requireRole(["admin", "manager"]);
   if (!profile) return UNAUTHORIZED;
   const parsed = idSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "Invalid id" };
   const admin = createAdminClient();
+  // A manager's UI only lists their own branch, but the id is client-supplied — so
+  // without this a crafted request could delete another studio's artist.
+  if (!(await staffInScope(admin, profile, parsed.data.id))) return UNAUTHORIZED;
+
+  const staff = await staffNameBranch(admin, parsed.data.id);
+  if (!staff) return { ok: false as const, error: "Artist not found" };
+
+  const upcoming = await upcomingBookingsFor(admin, staff);
+  // Fail CLOSED: this can't be undone, so "couldn't check" must never mean "go ahead".
+  if (!upcoming) {
+    return {
+      ok: false as const,
+      error: `Couldn't check ${staff.name}'s upcoming bookings, so nothing was removed. Please try again.`,
+    };
+  }
+  if (upcoming.count > 0) {
+    const n = upcoming.count;
+    const next = upcoming.next
+      ? `, the next on ${format(new Date(`${upcoming.next}T00:00:00`), "d MMM")}`
+      : "";
+    return {
+      ok: false as const,
+      error: `${staff.name} still has ${n} upcoming booking${n === 1 ? "" : "s"}${next}. Reassign or cancel ${n === 1 ? "it" : "them"} from the Bookings page before removing ${staff.name}.`,
+    };
+  }
+
   const { error } = await admin.from("staff").delete().eq("id", parsed.data.id);
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
+}
+
+/**
+ * Upcoming, not-yet-done bookings an artist still holds — what removing them would
+ * strand — and the date of the next one. null when the check itself failed.
+ */
+async function upcomingBookingsFor(
+  admin: Admin,
+  staff: { name: string; branch: string },
+): Promise<{ count: number; next: string | null } | null> {
+  // Abandoned, never-paid holds mustn't block a removal (same sweep listBookings does).
+  await sweepStalePendingHolds();
+  const { data, count, error } = await admin
+    .from("appointments")
+    .select("appointment_date", { count: "exact" })
+    // Exact (case-insensitive) name within the branch — no wildcards, so another
+    // artist whose name is a superstring is never counted.
+    .ilike("staff_name", staff.name)
+    .eq("branch", staff.branch as (typeof BRANCHES_TUPLE)[number])
+    .gte("appointment_date", istToday())
+    .eq("completed", false)
+    .in("payment_status", SLOT_HOLDING_STATUSES as unknown as string[])
+    .order("appointment_date")
+    .limit(1);
+  if (error) {
+    console.error("[removeStaff] upcoming-bookings check failed:", error.message);
+    return null;
+  }
+  const next = ((data as { appointment_date: string }[] | null) ?? [])[0]?.appointment_date ?? null;
+  return { count: count ?? 0, next };
 }
 
 export type StaffLogin = { email: string; full_name: string | null; role: string };
