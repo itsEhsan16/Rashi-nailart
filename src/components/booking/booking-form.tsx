@@ -185,22 +185,39 @@ export function BookingForm({ services, timeSlots, branches, staff, bookingFee }
       return;
     }
     let active = true;
-    setLoadingSlots(true);
-    getBookedSlots({
-      branch,
-      staff_name: staffName,
-      appointment_date: format(apptDate, "yyyy-MM-dd"),
-    })
-      .then((res) => {
-        if (!active) return;
-        setBookedSlots(res.slots);
-        setDayOff(res.dayOff);
+    const load = (showSpinner: boolean) => {
+      if (showSpinner) setLoadingSlots(true);
+      getBookedSlots({
+        branch,
+        staff_name: staffName,
+        appointment_date: format(apptDate, "yyyy-MM-dd"),
       })
-      .finally(() => {
-        if (active) setLoadingSlots(false);
-      });
+        .then((res) => {
+          if (!active) return;
+          setBookedSlots(res.slots);
+          setDayOff(res.dayOff);
+        })
+        .catch(() => {
+          // Never keep showing the previous selection's taken slots against a new
+          // date/artist. createBooking's unique index is the real guard anyway.
+          if (active) setBookedSlots([]);
+        })
+        .finally(() => {
+          if (active && showSpinner) setLoadingSlots(false);
+        });
+    };
+    load(true);
+
+    // Slots change while the page sits open: a booking gets cancelled or deleted
+    // by the studio, or someone else takes one. Re-check quietly whenever the
+    // customer comes back to the tab/app so a freed slot shows as free.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load(false);
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       active = false;
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [branch, staffName, apptDate]);
 
