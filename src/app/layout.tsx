@@ -3,6 +3,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { NavigationProgress } from "@/components/navigation-progress";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { StaleBuildReload } from "@/components/pwa/stale-build-reload";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
@@ -80,6 +81,7 @@ export default function RootLayout({
         {children}
         <Toaster richColors position="top-center" />
         <InstallPrompt />
+        <StaleBuildReload />
       </body>
     </html>
   );
